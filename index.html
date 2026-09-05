@@ -601,6 +601,10 @@
     font-size: 10px; color: var(--muted); text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  /* On a blocker row that column holds the score itself rather than a reach
+     weight, and the score is the answer being looked up - so it is not painted
+     as the footnote a weight is. */
+  .cd-combo .cc-bs { font-size: 11.5px; font-weight: 800; color: var(--text); }
 
   /* ---------- study screen ---------- */
   /* ---------- stats screen ---------- */
@@ -1147,8 +1151,8 @@ function renderRangeGrid(opts) {
   if (live && GRID_VIEW !== 'strategy') {
     if (mixEl) mixEl.innerHTML = '';
     if (classesEl) classesEl.innerHTML = '';
-    renderBlockerGrid(gridEl, detailEl,
-      blockerCells(classNode, classBoard, GRID_VIEW), highlightHand, GRID_VIEW);
+    renderBlockerGrid(gridEl, detailEl, classNode, classBoard, GRID_VIEW,
+                      highlightHand, highlightCombo);
     return;
   }
 
@@ -1430,7 +1434,10 @@ function buildViewTabs(hasBlocker) {
    Kept a separate function rather than a mode inside renderRangeGrid: nothing
    here has actions, a mix, a filter or a combo breakdown, and threading a
    second meaning through all of that would make both harder to read. */
-function renderBlockerGrid(gridEl, detailEl, cells, highlightHand, which) {
+function renderBlockerGrid(gridEl, detailEl, node, board, which,
+                           highlightHand, highlightCombo) {
+  const cells = blockerCells(node, board, which);
+  const plane = node['_' + which];
   gridEl.innerHTML = '';
   for (let r = 0; r < 13; r++) {
     for (let c = 0; c < 13; c++) {
@@ -1438,7 +1445,8 @@ function renderBlockerGrid(gridEl, detailEl, cells, highlightHand, which) {
       if (r === c) hand = RANK_DESC[r] + RANK_DESC[r];
       else if (r < c) hand = RANK_DESC[r] + RANK_DESC[c] + 's';
       else hand = RANK_DESC[c] + RANK_DESC[r] + 'o';
-      const v = cells ? cells[HAND_INDEX.get(hand)] : null;
+      const handIdx = HAND_INDEX.get(hand);
+      const v = cells ? cells[handIdx] : null;
       const cell = document.createElement('div');
       cell.className = 'hand-cell'
         + (hand === highlightHand ? ' hero-hand' : '')
@@ -1458,14 +1466,117 @@ function renderBlockerGrid(gridEl, detailEl, cells, highlightHand, which) {
       label.className = 'hand-label';
       label.textContent = hand;
       cell.appendChild(label);
+      // Every cell, including the ones drawn empty: "nothing here was scored"
+      // is an answer worth being able to ask for, and a cell that does not
+      // respond to a tap reads as the app having missed the tap.
+      if (cells) {
+        cell.onclick = () => {
+          gridEl.querySelectorAll('.picked').forEach((e) => e.classList.remove('picked'));
+          cell.classList.add('picked');
+          showBlockerDetail(detailEl, hand, handIdx, plane, board, which, highlightCombo);
+        };
+      }
       gridEl.appendChild(cell);
     }
   }
   const name = (BLOCKER_TABS.find((t) => t.key === which) || {}).label || which;
   detailEl.innerHTML = cells
     ? `<span class="cd-placeholder">${name}スコア（0〜10）。`
-      + '数字はそのマスに残っているコンボの平均です。</span>'
+      + '数字はそのマスに残っているコンボの平均です。'
+      + 'マスをタップすると、コンボごとのスコアを表示します。</span>'
     : '<span class="cd-placeholder">このスポットのブロッカースコアは収集されていません。</span>';
+  // The hero's own cell, the way the strategy grid opens on it: the combo they
+  // are holding is the one they came here to look up.
+  if (cells && highlightHand) {
+    for (const cell of gridEl.querySelectorAll('.hand-cell')) {
+      if (cell.classList.contains('hero-hand')) { cell.click(); break; }
+    }
+  }
+}
+
+/* One cell's combos, with the score each of them actually carries.
+
+   The grid can only show a mean, and a mean is the one thing a blocker score
+   must not be read as. Kh Qh and Ks Qs share a cell and block completely
+   different cards on a two-tone board; averaging them is what makes the 13x13
+   fit on a phone, and this is what that average is hiding. */
+function showBlockerDetail(detailEl, hand, handIdx, plane, board, which, highlightCombo) {
+  detailEl.innerHTML = '';
+  const name = (BLOCKER_TABS.find((t) => t.key === which) || {}).label || which;
+  const h = document.createElement('div');
+  h.className = 'cd-hand';
+  h.textContent = `${hand} の${name}スコア`;
+  detailEl.appendChild(h);
+
+  const onBoard = new Set(board || []);
+  const all = PF_CLASS_COMBOS[handIdx] || [];
+  const rows = [];
+  let blocked = 0;
+  for (const c of all) {
+    const [hi, lo] = PF_COMBO_CARDS[c];
+    if (onBoard.has(hi) || onBoard.has(lo)) { blocked++; continue; }
+    const v = plane[c];
+    if (!v) continue;              // 0 is the source's -1: no score for this one
+    rows.push({ combo: c, label: PF_COMBO_CARDS[c].join(' '), score: v - 1 });
+  }
+  // The same census the strategy view prints, for the same reason: a class down
+  // to two rows is either a board holding its cards or a site that scored none
+  // of them, and the list alone cannot tell those apart.
+  const why = [];
+  if (blocked) why.push(`ボード被り ${blocked}`);
+  const unscored = all.length - blocked - rows.length;
+  if (unscored) why.push(`スコアなし ${unscored}`);
+  const sub = document.createElement('div');
+  sub.className = 'cd-share';
+  sub.textContent = `${all.length}コンボ中 ${rows.length}`
+    + (why.length ? `（${why.join('、')}）` : '');
+  detailEl.appendChild(sub);
+
+  if (!rows.length) {
+    const p = document.createElement('span');
+    p.className = 'cd-placeholder';
+    p.textContent = 'このハンドには採点されたコンボがありません';
+    detailEl.appendChild(p);
+    return;
+  }
+  const mean = rows.reduce((a, r) => a + r.score, 0) / rows.length;
+  const wrap = document.createElement('div');
+  wrap.className = 'cd-combos';
+  const t = document.createElement('div');
+  t.className = 'mix-title';
+  // The mean is repeated here so the cell that was tapped and the rows under it
+  // can be checked against each other without going back to the grid.
+  t.textContent = `コンボ別（${rows.length}通り・平均 ${mean.toFixed(1)}）`;
+  wrap.appendChild(t);
+  rows.forEach((row) => {
+    const line = document.createElement('div');
+    line.className = 'cd-combo' + (row.combo === highlightCombo ? ' hero' : '');
+    const nm = document.createElement('span');
+    nm.className = 'cc-name';
+    nm.innerHTML = row.label.split(' ').map((cs) =>
+      `<span class="${SUIT_CLASS[cs[1]]}">${cs[0]}${SUIT_SYMBOL[cs[1]]}</span>`).join(' ');
+    line.appendChild(nm);
+    const bar = document.createElement('div');
+    bar.className = 'mix-bar cc-bar';
+    const seg = document.createElement('div');
+    seg.className = 'mseg';
+    seg.style.flex = String(row.score);
+    seg.style.background = blockerColor(row.score);
+    bar.appendChild(seg);
+    // The rest of the track is left showing, so a bar is read against a fixed
+    // 0..10 rather than against whichever combo in this list happens to be the
+    // widest - four bars that all fill the row would say every KQs blocks alike.
+    const rest = document.createElement('div');
+    rest.style.flex = String(10 - row.score);
+    bar.appendChild(rest);
+    line.appendChild(bar);
+    const val = document.createElement('span');
+    val.className = 'cc-w cc-bs';
+    val.textContent = row.score.toFixed(1);
+    line.appendChild(val);
+    wrap.appendChild(line);
+  });
+  detailEl.appendChild(wrap);
 }
 
 function showCellDetail(detailEl, hand, handIdx, actions, nonAllinRaises, inRange,
