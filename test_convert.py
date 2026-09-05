@@ -161,12 +161,18 @@ def main():
           nxt(nodes, "FLOP|flop_OOP_vs33", "C"), "TURN:XC33")
 
     print("\nthe run says what it did")
-    check("it reports the uncollected bet",
-          "WARNING: 1 opening turn bets found no defence node" in run.stdout, True)
+    # The number that would mean this script is broken, kept apart from the one
+    # that only means the collector was selective.
+    check("every collected node is reported reachable",
+          "turn defence: 4 of 4 collected nodes are reachable" in run.stdout, True)
+    check("an uncollected bet is reported as coverage, not as a fault",
+          "4 of 5 turn bets lead to one (80%)" in run.stdout, True)
+    check("and no warning is raised for it",
+          "WARNING" in run.stdout, False)
     check("it reports the all-in it inferred",
-          "(1 of them all-ins placed by elimination)" in run.stdout, True)
+          "1 all-in placed by elimination" in run.stdout, True)
 
-    print("\n=== %d passed, %d failed ===" % (14 - len(failures), len(failures)))
+    print("\n=== %d passed, %d failed ===" % (16 - len(failures), len(failures)))
     sys.exit(1 if failures else 0)
 
 

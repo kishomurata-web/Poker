@@ -250,8 +250,12 @@ def link_turn(nodes):
     always agreed with the name.
 
     Counts are returned rather than printed so the caller can total them across
-    groups; `dead_open` is the one that means something is wrong, since a bet
-    from an opening turn node should always have somewhere to go.
+    groups. The one that means something is wrong is a collected defence node
+    nothing points at - `defence` minus the links made. A turn bet with no node
+    is NOT that: the collector took a subset of each turn menu deliberately
+    (run_defence2.bat's header is a table of reach per request), so most of the
+    menu having no data behind it is the collection working as planned, and
+    reporting it as a fault buries the number that is a fault.
     """
     faced = defaultdict(list)
     for key, n in nodes.items():
@@ -265,6 +269,7 @@ def link_turn(nodes):
             faced[(line, card, "turn_IP")].append((n["pot"], key))
 
     stats = defaultdict(int)
+    stats["defence"] = sum(len(v) for v in faced.values())
     for key, n in nodes.items():
         parts = key.split("|")
         if len(parts) != 3 or not parts[1].startswith("turn_"):
@@ -568,17 +573,28 @@ def main():
     print("total %.1f MB (%.2f MB average per flop file)"
           % (total_bytes / 1048576, total_bytes / max(1, n_flops) / 1048576))
     print("resolution: per combo (1326) - the app aggregates to 169 itself")
-    print("turn defence: %d bets linked (%d of them all-ins placed by elimination)"
-          % (link_totals["linked"] + link_totals["linked_allin"], link_totals["linked_allin"]))
+    # Two separate facts, kept apart. The first is about this script: every
+    # collected node has to be reachable or it was converted for nothing. The
+    # second is about the collection: a turn menu offers more sizes than were
+    # ever asked for, and the ones that were skipped read as "no data" in the
+    # app, which is correct rather than broken.
+    reached = link_totals["linked"] + link_totals["linked_allin"]
+    orphaned = link_totals["defence"] - reached
+    bets = reached + link_totals["dead_open"]
+    print("turn defence: %d of %d collected nodes are reachable"
+          % (reached, link_totals["defence"]))
+    print("  %d of %d turn bets lead to one (%.0f%%); the rest were never collected"
+          % (reached, bets, reached * 100.0 / max(1, bets)))
+    if link_totals["linked_allin"]:
+        print("  %d all-in placed by elimination" % link_totals["linked_allin"])
     print("  %d raises over a turn bet have no node (none were collected)"
           % link_totals["dead_facing"])
-    if link_totals["dead_open"]:
-        # A bet from turn_OOP or turn_IP that no node's pot accounts for. Either
-        # that line's defence was never collected, or the pot arithmetic this
-        # relies on has stopped holding - worth knowing which before trusting
-        # the tree.
-        print("  WARNING: %d opening turn bets found no defence node"
-              % link_totals["dead_open"])
+    if orphaned:
+        # Collected, converted, shipped to the phone, and unreachable. Either
+        # the pot arithmetic link_turn relies on has stopped holding, or a
+        # defence node was collected whose parent was not.
+        print("  WARNING: %d collected defence nodes are not reachable from any bet"
+              % orphaned)
     if link_totals["ambiguous"]:
         print("  WARNING: %d turn bets matched more than one defence node by pot;"
               " the first was used" % link_totals["ambiguous"])
