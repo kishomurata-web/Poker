@@ -408,6 +408,11 @@ function writeDataset(stamp) {
         /応答がありません/.test(saved.state), saved.state);
       ok('and the panel says what to do about it',
         /アプリを更新/.test(saved.note), saved.note);
+      // The free-space figure is what tells the phone's own storage apart from
+      // a PC that has gone quiet, and it is the number the user is asked to
+      // read back - so it has to actually reach the screen.
+      ok('and it reports the space left on the device, not only the fault',
+        /端末の空き/.test(saved.note), saved.note);
     } else if (MODE === 'strict') {
       // The whole point: the save must survive a server that cannot take the
       // parallelism, rather than turning it into failures on screen.
