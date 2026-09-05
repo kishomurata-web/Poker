@@ -898,6 +898,7 @@
     <div class="drawer-items">
       <button id="off-clear" class="drawer-item">保存を削除</button>
       <button id="off-update" class="drawer-item">アプリを更新</button>
+      <button id="off-probe" class="drawer-item">PCに繋がるか確認</button>
     </div>
     <div class="stats-row"><span id="off-note"></span></div>
     <div class="drawer-note" id="off-build"></div>
@@ -4276,6 +4277,11 @@ async function renderStudyPostflop(pathEl) {
 */
 
 const OFF = { busy: false };
+// Longer than the worker's own probe deadline, so that a probe which times out
+// is reported by the worker as "the PC did not answer" rather than by the page
+// as "the worker did not answer". Two different faults, and the shorter wait
+// would have hidden the first behind the second.
+const PROBE_WAIT_MS = 20000;
 
 function offSupported() {
   return 'serviceWorker' in navigator && window.isSecureContext;
@@ -4366,6 +4372,41 @@ function offAsk(msg, onProgress, timeoutMs) {
       target.postMessage({ ...msg, port: ch.port2 }, [ch.port2]);
     }, () => finish({ failed: true }));
   });
+}
+
+/* Is the PC reachable from this phone at all?
+
+   The question the panel could not answer. A save reports the file it failed
+   on, which reads as a problem with that file; and the app opening proves
+   nothing, because it opens from Cache Storage with the PC switched off just as
+   well as with it on. So "PC sent nothing for 30s" left the user with no way to
+   tell an unreachable PC from a reachable one with one bad file - and those
+   want completely different things done about them.
+
+   The worker runs the fetch, because a request made there does not pass back
+   through its own cache. */
+async function offProbe(btn) {
+  const note = document.getElementById('off-note');
+  const was = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '確認中...'; }
+  try {
+    const r = await offAsk({ type: 'PROBE' }, null, PROBE_WAIT_MS);
+    if (!r) {
+      note.textContent = 'サービスワーカーが応答しません。'
+        + '「アプリを更新」を押してから、もう一度お試しください';
+    } else if (r.ok) {
+      note.textContent = `PCに繋がっています（${r.ms} ミリ秒 ・ ${r.bytes} バイト受信）。`
+        + '接続は問題ないので、原因は個々のファイル側にあります';
+    } else if (r.status) {
+      note.textContent = `PCは応答しましたが HTTP ${r.status} を返しました（${r.ms} ミリ秒）。`
+        + 'サーバーは動いていますが、データのフォルダが違う可能性があります';
+    } else {
+      note.textContent = `PCに繋がりません: ${r.error}。`
+        + 'PCのスリープ、Tailscaleの切断、サーバーの停止のいずれかです';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = was; }
+  }
 }
 
 async function offUsage() {
@@ -4780,6 +4821,16 @@ async function offSaveAll(depthId, btn) {
   // a success, with the failures relegated to the note underneath. The
   // headline has to agree with what just happened.
   await offRefresh();
+  // Stopped early because nothing was arriving. Said plainly, because the
+  // alternative reading of "0 / 299（失敗 5）" is that 294 files are still to
+  // come - and the run is over.
+  if (res && res.gaveUp) {
+    state.textContent = '保存を中止しました';
+    note.textContent = `最初の ${res.failed} 件が続けて失敗したため、残りは試していません。`
+      + (res.firstError ? `理由: ${res.firstError}。` : '')
+      + '「PCに繋がるか確認」を押すと、PC側か個々のファイル側かが分かります';
+    return;
+  }
   if (res && res.failed) {
     state.textContent = `${res.done} / ${res.total} 保存（失敗 ${res.failed}）`;
     note.textContent = `${res.failed} 件が取得できませんでした（あとで再実行できます）`
@@ -4806,6 +4857,8 @@ function offInit() {
   clear.onclick = offClear;
   const upd = document.getElementById('off-update');
   if (upd) upd.onclick = () => offUpdateNow(upd);
+  const probe = document.getElementById('off-probe');
+  if (probe) probe.onclick = () => offProbe(probe);
   offRegister().then(offRefresh);
 }
 

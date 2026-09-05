@@ -116,6 +116,21 @@ const SAVE_RAMP_AFTER = 3;
 // files at once may simply refuse the fourth. Either way the answer is the
 // same and it is not "give up on that file": try it again, on its own.
 const SAVE_RETRIES = 2;
+// How many files may fail, with none at all succeeding, before the run stops
+// rather than works through the rest.
+//
+// Five failures and no successes is not a run that is going badly, it is a run
+// that is not happening: the PC is unreachable, or asleep, or serving a
+// different folder than the one the list was built from. Each of those failures
+// costs a full 30s timeout, so a list of three hundred spends over two hours
+// arriving at a conclusion its fifth file already supported - and for all that
+// time the panel shows a number climbing towards a total it will never reach,
+// which reads as progress.
+const SAVE_GIVE_UP_AFTER = 5;
+// Shorter than a save's deadline: this one has someone watching it and waiting
+// for the answer, and "no answer in fifteen seconds" from a static file server
+// on the same tailnet is already the answer.
+const PROBE_TIMEOUT_MS = 15000;
 
 /* Is this request for the page, rather than for data? Navigations count
    whatever they are spelled as, since that is the request that decides which
@@ -502,9 +517,10 @@ self.addEventListener('message', (event) => {
       // retires one of the workers, and a save that cannot take any parallelism
       // at all walks itself down to one at a time and keeps going.
       let next = 0;
+      let gaveUp = false;
       const retry = [];
       const pump = async (id) => {
-        while (next < urls.length) {
+        while (!gaveUp && next < urls.length) {
           // Above the current width: wait rather than exit, so this worker can
           // join in if the save earns its way up to a wider one later.
           if (id >= limit) {
@@ -523,10 +539,26 @@ self.addEventListener('message', (event) => {
             retry.push(url);
             pending++;
             lastReason = `${url}: ${why}`;
+            // The reason, published on the FIRST failure rather than held back
+            // until the second pass. It was only set there, so the run that
+            // matters most - the one where nothing is working - spent its
+            // whole first pass showing a count and no cause.
+            if (!firstError) firstError = lastReason;
             // All the way back to one, not down by one. Whatever went wrong,
             // the one width that has been shown to work on this device is one.
             limit = 1;
             streak = 0;
+            // Nothing has arrived at all and this is the fifth to fail. That is
+            // not five unlucky files, it is the PC, the link, or the path being
+            // wrong for all of them - and every one of these costs a 30s
+            // timeout, so carrying on means hours of grinding towards an answer
+            // already visible. Stop and say so while the reason is still on
+            // screen. The handful collected still get their second pass, which
+            // is a fair check on whether it was a passing blip.
+            if (done === 0 && pending >= SAVE_GIVE_UP_AFTER) {
+              gaveUp = true;
+              return;
+            }
           } else {
             done++;
             streak++;
@@ -559,7 +591,10 @@ self.addEventListener('message', (event) => {
         } else done++;
         say({ url, phase: 'retry' });
       }
-      say({ finished: true });
+      // `gaveUp` travels with the ending so the panel can say the remaining
+      // files were never tried, rather than leaving a count short of the total
+      // to be read as that many failures.
+      say({ finished: true, gaveUp, attempted: done + failed });
       } catch (e) {
         // Named, so the panel can print it. A save that ends this way has a
         // bug behind it, and the message is the only way it will ever be seen
@@ -595,6 +630,44 @@ self.addEventListener('message', (event) => {
     // it costs nothing and covers the case where the waiting worker got there
     // by some other route.
     self.skipWaiting();
+  } else if (msg.type === 'PROBE') {
+    // Can this device reach the PC at all, right now?
+    //
+    // Nothing else could answer that. A failed save names the file it failed
+    // on, which invites the reading that the file is the problem; and the app
+    // opening proves nothing either way, because the page is served from Cache
+    // Storage and opens exactly the same with the PC switched off. So "PC sent
+    // nothing for 30s" on one file left the two possibilities that matter -
+    // that PC is unreachable, or that PC is fine and that one file is not -
+    // looking identical from the phone.
+    //
+    // Run from inside the worker because a fetch made here does not pass
+    // through the worker's own fetch handler, so it cannot be quietly answered
+    // out of the cache. This asks the network or it fails.
+    event.waitUntil((async () => {
+      const url = msg.url || './postflop/index.json';
+      const started = Date.now();
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), PROBE_TIMEOUT_MS);
+      let out;
+      try {
+        const res = await fetch(new Request(url, {
+          cache: 'no-store', credentials: 'same-origin', signal: ctl.signal,
+        }));
+        const body = await res.arrayBuffer();
+        out = { ok: res.status === 200, status: res.status, bytes: body.byteLength };
+      } catch (e) {
+        out = {
+          ok: false,
+          error: e && e.name === 'AbortError'
+            ? `${PROBE_TIMEOUT_MS / 1000}秒以内に応答がありません`
+            : (e && e.message) || String(e),
+        };
+      } finally { clearTimeout(timer); }
+      if (msg.port) {
+        msg.port.postMessage({ ...out, url, ms: Date.now() - started, finished: true });
+      }
+    })());
   } else if (msg.type === 'PING') {
     // Which build is answering. An older worker has no handler for this and
     // simply says nothing, so the panel's timeout is itself the answer: no

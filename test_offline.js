@@ -36,7 +36,9 @@ const MODE = process.argv.includes('--fail') ? 'fail'
         : process.argv.includes('--crash') ? 'crash'
           : process.argv.includes('--mute') ? 'mute'
             : process.argv.includes('--revalidate') ? 'revalidate'
-              : process.argv.includes('--slow') ? 'slow' : 'ok';
+              : process.argv.includes('--slow') ? 'slow'
+                : process.argv.includes('--probe') ? 'probe'
+                  : process.argv.includes('--dead') ? 'dead' : 'ok';
 
 const NFILES = 12;
 function writeDataset(stamp) {
@@ -74,6 +76,14 @@ function writeDataset(stamp) {
   // is the defect the new one fixes, not something to assert against here.
   if ((MODE === 'crash' || MODE === 'mute') && !process.argv.includes('--new')) {
     console.log(`\n  --${MODE} needs --new: it tests reporting the old worker does not have.\n`);
+    process.exit(0);
+  }
+  if (MODE === 'dead' && !process.argv.includes('--new')) {
+    console.log('\n  --dead needs --new: the old worker has no give-up rule.\n');
+    process.exit(0);
+  }
+  if (MODE === 'probe' && !process.argv.includes('--new')) {
+    console.log('\n  --probe needs --new: the old worker has no PROBE handler.\n');
     process.exit(0);
   }
   if (MODE === 'slow' && !process.argv.includes('--new')) {
@@ -115,7 +125,7 @@ function writeDataset(stamp) {
   let sw = fs.readFileSync(path.join(__dirname, WORKER), 'utf8');
   // 120s is right on a phone and far too long for a test, so the hang case runs
   // the same code with the timeout turned down.
-  if (MODE === 'hang' || MODE === 'stall') {
+  if (MODE === 'hang' || MODE === 'stall' || MODE === 'dead') {
     sw = sw.replace(/HEADER_TIMEOUT_MS = \d+/, 'HEADER_TIMEOUT_MS = 3000')
       .replace(/STALL_TIMEOUT_MS = \d+/, 'STALL_TIMEOUT_MS = 3000')
       .replace(/FETCH_TIMEOUT_MS = \d+/, 'FETCH_TIMEOUT_MS = 20000');
@@ -166,6 +176,10 @@ function writeDataset(stamp) {
     if (isData) {
       if (MODE === 'fail') { res.writeHead(500); res.end('no'); return; }
       if (MODE === 'hang' && rel.includes('7s3h0d')) return;  // never answers
+      // Every data file, not one: a PC that is asleep, off the tailnet, or
+      // serving a different folder answers none of them, and that is the run
+      // that used to spend 30s per file working through all of them.
+      if (MODE === 'dead') return;
       // Answers, then stops mid-body. The response headers arrive normally, so
       // fetch() resolves and everything looks fine; the file never finishes.
       if (MODE === 'stall' && rel.includes('7s3h0d')) {
@@ -259,7 +273,38 @@ function writeDataset(stamp) {
   ok('and still loads it after a re-conversion, with the old worker in place',
     loaded, 'PF_DEPTHS never arrived: the drop message is never answered');
 
-  if (loaded && MODE === 'revalidate') {
+  if (loaded && MODE === 'probe') {
+    // The question a failed save cannot answer: is the PC reachable at all?
+    // The app opens from Cache Storage whether it is or not, so "the app works"
+    // is no evidence either way - which is exactly how "PC sent nothing for 30s"
+    // on one file came to be read as a problem with that file.
+    //
+    // Shortened only on the page's side; the worker's own deadline is the one
+    // that ships.
+    const reachable = await page2.evaluate(() => offAsk({ type: 'PROBE' }, null, 20000));
+    console.log(`        PC reachable: ${JSON.stringify(reachable)}`);
+    ok('with the PC answering, the probe says so and times it',
+      reachable && reachable.ok === true && reachable.bytes > 0
+      && typeof reachable.ms === 'number', JSON.stringify(reachable));
+
+    // Now the PC goes away entirely - asleep, Tailscale down, server stopped.
+    // All of those look the same from here, and all of them are "not reachable".
+    shellSilent = true;
+    const gone = await page2.evaluate(() => offAsk({ type: 'PROBE' }, null, 25000));
+    console.log(`        PC gone:      ${JSON.stringify(gone)}`);
+    ok('and with the PC gone it says that, rather than blaming a file',
+      gone && gone.ok === false && /応答がありません/.test(gone.error || ''),
+      JSON.stringify(gone));
+    // The panel has to render the difference, not just receive it.
+    const shown = await page2.evaluate(async () => {
+      await offProbe(null);
+      return document.getElementById('off-note').textContent;
+    });
+    console.log(`        panel says:   "${shown}"`);
+    ok('and the panel names the PC as the thing that is unreachable',
+      /PCに繋がりません/.test(shown), shown);
+    shellSilent = false;
+  } else if (loaded && MODE === 'revalidate') {
     // What a launch costs, measured rather than reasoned about.
     //
     // index.html is megabytes in the real app, and the shell is network-first
@@ -423,6 +468,25 @@ function writeDataset(stamp) {
       ok('and the refusals really happened, so the test is testing something',
         refused > 0, `refused ${refused}`);
       console.log(`        refused: ${refused}`);
+    } else if (MODE === 'dead') {
+      // The run that mattered: nothing is arriving, and every attempt costs a
+      // full header timeout. Working through all of them proves nothing the
+      // fifth file had not already shown, and on a real list of three hundred
+      // it is over two hours of a counter climbing towards a total it will
+      // never reach - which reads as progress.
+      // Five attempted out of twelve. On the real list it is five out of three
+      // hundred, which is the whole point.
+      ok('a save where nothing arrives stops instead of grinding through the list',
+        /最初の 5 件/.test(saved.note) && /残りは試していません/.test(saved.note),
+        JSON.stringify({ state: saved.state, note: saved.note }));
+      ok('and says it stopped rather than implying the rest are still coming',
+        /中止しました/.test(saved.state), saved.state);
+      ok('and gives the reason it stopped for',
+        /PC sent nothing for/.test(saved.note), saved.note);
+      ok('and points at the one button that can tell PC from file',
+        /PCに繋がるか確認/.test(saved.note), saved.note);
+      ok('and nothing was stored, since nothing arrived',
+        saved.stored <= 3, JSON.stringify({ stored: saved.stored }));
     } else if (MODE === 'slow') {
       // The complaint this answers: "応答が止まりました" on a save that was
       // working. A worker that is alive says so every five seconds, so the
