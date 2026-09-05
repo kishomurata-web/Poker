@@ -53,7 +53,7 @@ const CACHE_VERSION = 'gto-v2';
 
    Not derived from CACHE_VERSION: bumping that throws away the stored data,
    which is exactly what must NOT happen just because the worker changed. */
-const SW_BUILD = '2026-09-05a revalidate';
+const SW_BUILD = '2026-09-05b heartbeat';
 /* './' is deliberately not here even though it is a real, reachable URL.
    The server answers it with index.html, so listing it stored the same
    megabytes twice and, far worse, downloaded them twice on every install -
@@ -65,6 +65,11 @@ const SHELL = ['./index.html', './manifest.webmanifest'];
 // used instead. Long enough for a slow home network, short enough that opening
 // the app away from the PC does not feel broken.
 const SHELL_TIMEOUT_MS = 2500;
+// The same question asked during an install, where the user has pressed
+// "update" and is waiting, so it is worth waiting out a page that really did
+// change. Bounded because an install that never finishes never activates the
+// worker it was installing - see the note where this is used.
+const INSTALL_TIMEOUT_MS = 180000;
 /* Three deadlines, not one, because a file can fail to arrive in three
    different ways and they have three different causes.
 
@@ -162,9 +167,13 @@ self.addEventListener('install', (event) => {
     const cache = await caches.open(CACHE_VERSION);
     for (const url of SHELL) {
       try {
-        // No deadline here, unlike the fetch handler: this runs because the
-        // user pressed "update" and is waiting for one, so a slow download is
-        // the thing being asked for rather than something to escape from.
+        // A far longer deadline than a page load gets, because this runs
+        // because the user pressed "update" and is waiting for one - but a
+        // deadline all the same. It was Infinity, and that was a way to hang
+        // for ever: nothing below this line runs until the fetch settles, so a
+        // PC that never answers meant skipWaiting() was never reached, the new
+        // worker never activated, and the app went on running the old one with
+        // no sign that anything had gone wrong.
         //
         // Revalidating rather than downloading, for the same reason as the
         // fetch handler: an update that changes only this worker - which is
@@ -172,7 +181,7 @@ self.addEventListener('install', (event) => {
         // page again. Only a page that really did change is paid for, and that
         // is the difference between pressing "update" and waiting a moment
         // versus waiting out two full downloads of the page.
-        const res = await fetchFresh(url, Infinity, await cache.match(url));
+        const res = await fetchFresh(url, INSTALL_TIMEOUT_MS, await cache.match(url));
         if (res && res !== NOT_MODIFIED && res.status === 200) {
           await cache.put(url, res.clone());
         }
@@ -342,7 +351,25 @@ self.addEventListener('message', (event) => {
       }
     } catch (e) { /* the port is gone; the save below will find out too */ }
     event.waitUntil((async () => {
+      // Between "accepted" and the first file there was one step and no word
+      // about it, so a save that got stuck there looked exactly like a worker
+      // that had died - and the panel's advice for that, close the app and
+      // start again, is the one thing that cannot help. Opening the cache is
+      // not free on a device holding hundreds of megabytes, so the step that
+      // happens before anything else has to say that it is happening.
+      const tell = (extra) => {
+        try {
+          if (msg.port) {
+            msg.port.postMessage({
+              done: 0, failed: 0, pending: 0, bytes: 0, build: SW_BUILD,
+              total: (msg.urls || []).length, ...extra,
+            });
+          }
+        } catch (e) { /* the port is gone; the save below will find out too */ }
+      };
+      tell({ phase: 'opening' });
       const cache = await caches.open(CACHE_VERSION);
+      tell({ phase: 'opened' });
       let done = 0;
       let failed = 0;
       let bytes = 0;
@@ -451,6 +478,13 @@ self.addEventListener('message', (event) => {
         }
       };
 
+      // A pulse for as long as this is alive, so that silence means one thing
+      // instead of two. A save that is merely slow - one big file on a slow
+      // link, which is normal here - looked identical to a worker that had been
+      // killed, and the panel accused the user of the second whenever it saw
+      // the first. Anything arriving resets the page's watchdog, so with this
+      // running, a stalled panel really does mean a stopped worker.
+      const beat = setInterval(() => say({ phase: 'alive' }), 5000);
       // Everything from here can throw, and a throw inside waitUntil goes
       // nowhere: the page is left waiting on a promise that will never settle,
       // with an empty panel and no clue. Whatever happens, the save reports an
@@ -531,6 +565,8 @@ self.addEventListener('message', (event) => {
         // bug behind it, and the message is the only way it will ever be seen
         // - there is no console on the phone this runs on.
         say({ finished: true, fatal: (e && (e.stack || e.message)) || String(e) });
+      } finally {
+        clearInterval(beat);
       }
     })());
   } else if (msg.type === 'DROP_DEPTH') {

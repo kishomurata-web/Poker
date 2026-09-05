@@ -35,7 +35,8 @@ const MODE = process.argv.includes('--fail') ? 'fail'
       : process.argv.includes('--strict') ? 'strict'
         : process.argv.includes('--crash') ? 'crash'
           : process.argv.includes('--mute') ? 'mute'
-            : process.argv.includes('--revalidate') ? 'revalidate' : 'ok';
+            : process.argv.includes('--revalidate') ? 'revalidate'
+              : process.argv.includes('--slow') ? 'slow' : 'ok';
 
 const NFILES = 12;
 function writeDataset(stamp) {
@@ -75,6 +76,10 @@ function writeDataset(stamp) {
     console.log(`\n  --${MODE} needs --new: it tests reporting the old worker does not have.\n`);
     process.exit(0);
   }
+  if (MODE === 'slow' && !process.argv.includes('--new')) {
+    console.log('\n  --slow needs --new: the old worker sends no heartbeat to test.\n');
+    process.exit(0);
+  }
   if (MODE === 'revalidate' && !process.argv.includes('--new')) {
     console.log('\n  --revalidate needs --new: the old worker re-downloads the page every time,\n'
       + '  which is the behaviour being fixed rather than a thing to test.\n');
@@ -95,6 +100,11 @@ function writeDataset(stamp) {
   // keep talking - right on a phone, far too long for a test. The code under
   // test is the same code either way.
   if (MODE === 'mute') html = html.replace('OFF.accepted ? 180 : 20', 'OFF.accepted ? 6 : 3');
+  // Twelve seconds of silence counts as stalled, against one file that takes
+  // twenty. Without a heartbeat that file alone trips the watchdog; with one
+  // every five seconds it cannot. Turning the deadline down rather than the
+  // heartbeat up keeps the thing under test - the worker - exactly as shipped.
+  if (MODE === 'slow') html = html.replace('OFF.accepted ? 180 : 20', 'OFF.accepted ? 12 : 20');
   fs.writeFileSync(path.join(ROOT, 'index.html'), html);
   // Default: the old worker, which is what a device that has not picked up the
   // new one is still running. --new runs the current one, to check that the
@@ -210,7 +220,12 @@ function writeDataset(stamp) {
     if (isData) {
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);
-      setTimeout(send, DELAY_MS);
+      // One file that is slow but perfectly healthy - a big file on a mobile
+      // link, which is the normal case here and must not be mistaken for a
+      // worker that has died. Still well inside HEADER_TIMEOUT_MS, so the
+      // worker itself has no reason to give up on it.
+      const slow = MODE === 'slow' && rel.includes('7s3h0d');
+      setTimeout(send, slow ? 20000 : DELAY_MS);
     } else send();
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -308,6 +323,16 @@ function writeDataset(stamp) {
       await offRefresh();
       const btns = [...document.querySelectorAll('#off-saves button')];
       if (!btns.length) return { err: 'no save button' };
+      // The watchdog's verdict has to be caught as it happens: it writes into
+      // the same element the progress counter does, so by the end of a save
+      // that recovered there is nothing left on screen to show it ever fired.
+      const stalls = [];
+      const target = document.getElementById('off-state');
+      new MutationObserver(() => {
+        if (/応答が止まりました|応答がありません/.test(target.textContent)) {
+          stalls.push(target.textContent);
+        }
+      }).observe(target, { childList: true, characterData: true, subtree: true });
       const run = offSaveAll(PF_DEPTHS[0].id, btns[0]);
       // A worker that never answers means the save never returns - which is
       // precisely the state the watchdog exists for, so it cannot be awaited.
@@ -315,6 +340,7 @@ function writeDataset(stamp) {
       else await run;
       const c = await caches.open('gto-v2');
       return {
+        stalls: stalls.length,
         stored: (await c.keys()).length,
         state: document.getElementById('off-state').textContent,
         note: document.getElementById('off-note').textContent,
@@ -392,6 +418,17 @@ function writeDataset(stamp) {
       ok('and the refusals really happened, so the test is testing something',
         refused > 0, `refused ${refused}`);
       console.log(`        refused: ${refused}`);
+    } else if (MODE === 'slow') {
+      // The complaint this answers: "応答が止まりました" on a save that was
+      // working. A worker that is alive says so every five seconds, so the
+      // panel can tell a slow save from a dead one - and only accuse the user
+      // of the second.
+      ok('a slow file does not get the save reported as stopped',
+        saved.stalls === 0, `the panel cried stall ${saved.stalls} time(s)`);
+      ok('and the slow file is stored like any other',
+        saved.stored > NFILES, JSON.stringify({ stored: saved.stored }));
+      ok('and the save still reports a clean finish',
+        !/失敗/.test(saved.state), saved.state);
     } else if (MODE === 'hang') {
       ok('a hung file does not stop the rest',
         saved.stored > 2, JSON.stringify({ stored: saved.stored }));

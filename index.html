@@ -4654,10 +4654,25 @@ async function offSaveAll(depthId, btn) {
     stalled = true;
     state.textContent = OFF.accepted ? '応答が止まりました' : '応答がありません';
     note.textContent = OFF.accepted
-      ? `保存処理が ${Math.round(quiet)} 秒間なにも返していません。`
+      ? `保存処理が ${Math.round(quiet)} 秒間なにも返していません`
+        + `（${OFF.build || 'バージョン不明'}）。`
+        + 'この版は動作中なら5秒ごとに反応を返すので、これは処理が止まっています。'
         + 'アプリを閉じて開き直し、もう一度お試しください'
       : 'サービスワーカーが要求を受け取りませんでした。'
         + '「アプリを更新」を押してから、もう一度お試しください';
+    // How much room the phone has left, which is not something the PC can be
+    // asked about and is the first thing worth knowing about a save that
+    // stopped. Writing to Cache Storage is what happens between the messages
+    // that went missing, and a device at its quota is exactly where that write
+    // stops coming back - a fault that otherwise reads as a slow or broken PC
+    // and sends you to look at the wrong machine entirely.
+    const stalledText = note.textContent;
+    offUsage().then((e) => {
+      if (!e || typeof e.quota !== 'number' || note.textContent !== stalledText) return;
+      const left = Math.max(0, e.quota - (e.usage || 0));
+      note.textContent = `${stalledText}（端末の空き ${offFmt(left)}`
+        + ` ・ 使用 ${offFmt(e.usage || 0)} / 上限 ${offFmt(e.quota)}）`;
+    });
   }, 2000);
   const onProgress = (p) => {
     if (!p || p.total === undefined) return;
@@ -4667,9 +4682,18 @@ async function offSaveAll(depthId, btn) {
     // recorded rather than just displayed.
     if (p.phase === 'accepted') {
       OFF.accepted = true;
+      // Kept, so that if this run goes on to stall the panel can say which
+      // worker went quiet. "It stopped responding" and "the OLD worker stopped
+      // responding" send you to different places, and only the second is worth
+      // acting on.
+      OFF.build = p.build || null;
       note.textContent = `保存を開始しました（${p.build || '不明なバージョン'}）`;
       return;
     }
+    // The steps before the first file. They used to happen in silence, which is
+    // indistinguishable from nothing happening at all.
+    if (p.phase === 'opening') { state.textContent = '保存領域を開いています'; return; }
+    if (p.phase === 'opened') { state.textContent = '準備ができました'; return; }
     // `pending` counts files that failed once and are queued for another go.
     // They are counted here rather than left out, because leaving them out
     // means a run where everything is failing shows a counter that does not
@@ -4718,6 +4742,7 @@ async function offSaveAll(depthId, btn) {
     }
   };
   OFF.accepted = false;
+  OFF.build = null;
   const res = await offAsk({ type: 'CACHE_URLS', urls }, onProgress);
   if (poll) clearInterval(poll);
   clearInterval(watchdog);
