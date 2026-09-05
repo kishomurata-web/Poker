@@ -17,6 +17,24 @@ const ok = (n, c, d) => { if (c) { pass++; console.log('  PASS  ' + n); }
 
 const ROOT = fs.mkdtempSync('/tmp/offtest-');
 
+/* Rewrite a piece of the real page or worker, and fail loudly if the thing
+   being rewritten is no longer there.
+
+   These edits turn production timeouts down so a test can finish. A plain
+   .replace() that matches nothing changes nothing and says nothing, so renaming
+   the thing it targeted leaves the test running against the shipped timeout -
+   which is how --slow came to pass without ever exercising what it is for. A
+   test that quietly stops testing is worse than one that fails. */
+function mustReplace(text, from, to) {
+  if (!text.includes(from)) {
+    console.error(`\n  This test rewrites a line that no longer exists:\n    ${from}\n`
+      + '  It was renamed or removed. Update the test to match, or it is not\n'
+      + '  testing what it claims to.\n');
+    process.exit(2);
+  }
+  return text.split(from).join(to);
+}
+
 // How the server behaves for the postflop data files. The point of the test is
 // that these cases must look different on screen; before, all of them read as
 // "0 / 299" and stayed there.
@@ -114,15 +132,15 @@ function writeDataset(stamp) {
   // The watchdog waits 20s for the worker to acknowledge and 180s for it to
   // keep talking - right on a phone, far too long for a test. The code under
   // test is the same code either way.
-  if (MODE === 'mute') html = html.replace('OFF.accepted ? 180 : 20', 'OFF.accepted ? 6 : 3');
+  if (MODE === 'mute') html = mustReplace(html, 'OFF.accepted ? OFF.stallAfter : 20', 'OFF.accepted ? 6 : 3');
   // Twelve seconds of silence counts as stalled, against one file that takes
   // twenty. Without a heartbeat that file alone trips the watchdog; with one
   // every five seconds it cannot. Turning the deadline down rather than the
   // heartbeat up keeps the thing under test - the worker - exactly as shipped.
-  if (MODE === 'slow') html = html.replace('OFF.accepted ? 180 : 20', 'OFF.accepted ? 12 : 20');
+  if (MODE === 'slow') html = mustReplace(html, 'OFF.accepted ? OFF.stallAfter : 20', 'OFF.accepted ? 12 : 20');
   // Eight seconds of silence, not the thirty a five-second pulse earns. The
   // recovery under test is the same either way; only the waiting is shortened.
-  if (MODE === 'die') html = html.replace('OFF.accepted ? OFF.stallAfter : 20', 'OFF.accepted ? 8 : 20');
+  if (MODE === 'die') html = mustReplace(html, 'OFF.accepted ? OFF.stallAfter : 20', 'OFF.accepted ? 8 : 20');
   fs.writeFileSync(path.join(ROOT, 'index.html'), html);
   // Default: the old worker, which is what a device that has not picked up the
   // new one is still running. --new runs the current one, to check that the
@@ -134,15 +152,15 @@ function writeDataset(stamp) {
   // 120s is right on a phone and far too long for a test, so the hang case runs
   // the same code with the timeout turned down.
   if (MODE === 'hang' || MODE === 'stall' || MODE === 'dead') {
-    sw = sw.replace(/HEADER_TIMEOUT_MS = \d+/, 'HEADER_TIMEOUT_MS = 3000')
-      .replace(/STALL_TIMEOUT_MS = \d+/, 'STALL_TIMEOUT_MS = 3000')
-      .replace(/FETCH_TIMEOUT_MS = \d+/, 'FETCH_TIMEOUT_MS = 20000');
+    sw = mustReplace(sw, 'HEADER_TIMEOUT_MS = 30000', 'HEADER_TIMEOUT_MS = 3000');
+    sw = mustReplace(sw, 'STALL_TIMEOUT_MS = 30000', 'STALL_TIMEOUT_MS = 3000');
+    sw = mustReplace(sw, 'FETCH_TIMEOUT_MS = 600000', 'FETCH_TIMEOUT_MS = 20000');
   }
   // A bug in the save itself, thrown where no try/catch of its own can see it.
   // This is the shape of fault that reached the user as a completely blank
   // panel: the promise inside waitUntil rejected and nobody was told.
   if (MODE === 'crash') {
-    sw = sw.replace("say({ url, phase: 'start' });",
+    sw = mustReplace(sw, "say({ url, phase: 'start' });",
       "say({ url, phase: 'start' }); if (/7s3h3d/.test(url)) throw new Error('injected crash');");
   }
   // A worker that stops dead in the middle of a save - which is what a phone
@@ -150,14 +168,14 @@ function writeDataset(stamp) {
   // the fault the page now recovers from instead of reporting. Once only, so
   // the resumed run can get past it and the test can see it finish.
   if (MODE === 'die') {
-    sw = sw.replace('const CACHE_VERSION', 'let diedOnce = false;\nconst CACHE_VERSION')
-      .replace("say({ url, phase: 'start' });",
-        "say({ url, phase: 'start' });"
-        + " if (!diedOnce && /7s3h5d/.test(url)) { diedOnce = true; clearInterval(beat);"
-        + " await new Promise(() => {}); }");
+    sw = mustReplace(sw, 'const CACHE_VERSION', 'let diedOnce = false;\nconst CACHE_VERSION');
+    sw = mustReplace(sw, "say({ url, phase: 'start' });",
+      "say({ url, phase: 'start' });"
+      + " if (!diedOnce && /7s3h5d/.test(url)) { diedOnce = true; clearInterval(beat);"
+      + " await new Promise(() => {}); }");
   }
   // A worker that hears the request and never says anything at all.
-  if (MODE === 'mute') sw = sw.replace("if (msg.type === 'CACHE_URLS') {", "if (false) {");
+  if (MODE === 'mute') sw = mustReplace(sw, "if (msg.type === 'CACHE_URLS') {", "if (false) {");
   fs.writeFileSync(path.join(ROOT, 'sw.js'), sw);
   fs.writeFileSync(path.join(ROOT, 'manifest.webmanifest'), '{"name":"t"}');
   fs.writeFileSync(path.join(ROOT, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
@@ -456,14 +474,25 @@ function writeDataset(stamp) {
       // The case that read as a frozen zero. It has to name itself now.
       // The headline must not read as success while the data all failed. This
       // comes from the page, so it holds whichever worker is running.
+      // What must hold whichever worker is running: the headline may not read
+      // as a success when every data file failed. That was the original defect
+      // here - the panel refreshed from the storage estimate and announced
+      // "保存済み 15 MB" over a run in which nothing had arrived.
       ok('a save where the data all fails does not claim success',
-        /失敗 12/.test(saved.state) && !/保存済み/.test(saved.state), saved.state);
+        !/保存済み/.test(saved.state) && !/保存しました/.test(saved.state), saved.state);
       // The cause comes from the worker, so only the current one can give it.
       if (NEW) {
         ok('and gives the reason rather than a guess',
           /HTTP 500/.test(saved.note), saved.note);
+        // Twelve identical failures is the systemic case, so the current worker
+        // stops at five rather than working through the rest. The old one has
+        // no such rule and grinds through all of them.
+        ok('and stops once it is clear nothing is arriving',
+          /中止しました/.test(saved.state), saved.state);
       } else {
         console.log('        (the old worker sends no reason - nothing to check)');
+        ok('the old worker instead works through every one of them',
+          /失敗 12/.test(saved.state), saved.state);
       }
     } else if (MODE === 'crash') {
       // The state that reached the user as a blank panel. A fault in the save

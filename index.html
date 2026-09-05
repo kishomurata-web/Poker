@@ -4705,7 +4705,13 @@ async function offSaveAll(depthId, btn) {
     // Silence from a worker that pulses means it is gone, and a gone worker is
     // something to recover from rather than to report. Start it again; the
     // files already stored are skipped, so this picks up where it stopped.
-    if (resumes < SAVE_RESUME_LIMIT && onStalled) {
+    //
+    // Only for a run that HAD been accepted. Resuming recovers a worker that
+    // died part-way through work it was doing; a worker that never answered the
+    // first message is not going to answer the fifth, and retrying it would
+    // spend a minute and a half turning an immediate, accurate report into a
+    // slow one.
+    if (OFF.accepted && resumes < SAVE_RESUME_LIMIT && onStalled) {
       resumes++;
       state.textContent = '中断を検出しました';
       note.textContent = `保存が ${Math.round(quiet)} 秒止まったため自動的に再開します`
