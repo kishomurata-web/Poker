@@ -340,6 +340,21 @@ function writeDataset(stamp) {
     console.log(`        panel says:   "${shown}"`);
     ok('and the panel names the PC as the thing that is unreachable',
       /PCに繋がりません/.test(shown), shown);
+
+    // The update button, with the PC still gone. reg.update() cannot tell a
+    // check that found nothing new from a check that got no answer - both leave
+    // nothing installing - so this used to report "すでに最新です", which reads
+    // as the button having worked and is why pressing it looked like it did
+    // nothing at all.
+    const updated = await page2.evaluate(async () => {
+      await offUpdateNow(null);
+      return document.getElementById('off-note').textContent;
+    });
+    console.log(`        update says:  "${updated}"`);
+    ok('and the update button does not claim to be up to date it cannot reach',
+      !/すでに最新です/.test(updated), updated);
+    ok('and says the PC is why it could not check',
+      /PCに繋がらないため/.test(updated), updated);
     shellSilent = false;
   } else if (loaded && MODE === 'revalidate') {
     // What a launch costs, measured rather than reasoned about.

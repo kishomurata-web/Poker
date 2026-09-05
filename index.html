@@ -4496,9 +4496,20 @@ async function offUpdateNow(btn) {
       return;
     }
     if (!pending) {
-      note.textContent = before
-        ? `すでに最新です（${before}）`
-        : 'PCに接続できていないため確認できませんでした';
+      // "Already up to date" is a claim about the PC, and it must not be made
+      // without having reached the PC. reg.update() is quiet about the
+      // difference: a check that found no new worker and a check that never got
+      // an answer both leave nothing installing, so an unreachable PC reported
+      // itself as "すでに最新です" - which reads as the button having worked and
+      // is why pressing it appeared to do nothing at all. Ask before claiming.
+      const reach = await offAsk({ type: 'PROBE' }, null, PROBE_WAIT_MS);
+      if (reach && reach.ok) {
+        note.textContent = `すでに最新です（${before || '不明なバージョン'}）`;
+      } else {
+        note.textContent = 'PCに繋がらないため更新を確認できませんでした'
+          + (reach && reach.error ? `: ${reach.error}` : '')
+          + '。PCのスリープ、Tailscaleの切断、サーバーの停止のいずれかです';
+      }
     } else {
       note.textContent = '更新を取得しましたが切り替わりませんでした。'
         + 'アプリを完全に閉じてから開き直してください';
