@@ -16,10 +16,20 @@
    was consulted first, and the only ways out were bumping the cache version or
    clearing the copy - both of which throw away the hundreds of megabytes of
    data that have nothing to do with the page having changed. So the shell is
-   network-first with a short timeout and the cached copy behind it: one
-   request per launch that can be slow, in exchange for a build being able to
-   land. Everything the offline copy exists for still works with the PC off -
-   the timeout expires and the cached page opens.
+   network-first with a short timeout and the cached copy behind it, in
+   exchange for a build being able to land. Everything the offline copy exists
+   for still works with the PC off - the timeout expires and the cached page
+   opens.
+
+   What that launch request must NOT be is a download of the page. index.html
+   is megabytes; asking for it outright to find out whether it changed spends
+   the whole link on an answer that is almost always "it did not", and over a
+   phone link it cannot finish inside any timeout short enough to launch on -
+   so it was thrown away every time AND a genuinely new build could never land
+   through it. It is a conditional request instead - If-Modified-Since, built
+   from the copy already in Cache Storage - which asks the question and takes a
+   304 for an answer. Cheap enough to fit in the timeout, which is what makes
+   both halves work.
 
    Bumping CACHE_VERSION is how a re-converted dataset gets picked up: the new
    worker deletes every older cache on activate, so a stale mixture of old and
@@ -43,8 +53,14 @@ const CACHE_VERSION = 'gto-v2';
 
    Not derived from CACHE_VERSION: bumping that throws away the stored data,
    which is exactly what must NOT happen just because the worker changed. */
-const SW_BUILD = '2026-09-04d stall-detect';
-const SHELL = ['./', './index.html', './manifest.webmanifest'];
+const SW_BUILD = '2026-09-05a revalidate';
+/* './' is deliberately not here even though it is a real, reachable URL.
+   The server answers it with index.html, so listing it stored the same
+   megabytes twice and, far worse, downloaded them twice on every install -
+   which is most of what made pressing "update" take minutes. A navigation to
+   './' is served from './index.html' by the fetch handler below, so nothing
+   is lost by not holding a second copy under a second name. */
+const SHELL = ['./index.html', './manifest.webmanifest'];
 // How long the page is allowed to wait for the PC before the stored copy is
 // used instead. Long enough for a slow home network, short enough that opening
 // the app away from the PC does not feel broken.
@@ -146,8 +162,20 @@ self.addEventListener('install', (event) => {
     const cache = await caches.open(CACHE_VERSION);
     for (const url of SHELL) {
       try {
-        const res = await fetch(url, { cache: 'no-store' });
-        if (res && res.status === 200) await cache.put(url, res.clone());
+        // No deadline here, unlike the fetch handler: this runs because the
+        // user pressed "update" and is waiting for one, so a slow download is
+        // the thing being asked for rather than something to escape from.
+        //
+        // Revalidating rather than downloading, for the same reason as the
+        // fetch handler: an update that changes only this worker - which is
+        // most of them - then costs a 304 per shell file instead of the whole
+        // page again. Only a page that really did change is paid for, and that
+        // is the difference between pressing "update" and waiting a moment
+        // versus waiting out two full downloads of the page.
+        const res = await fetchFresh(url, Infinity, await cache.match(url));
+        if (res && res !== NOT_MODIFIED && res.status === 200) {
+          await cache.put(url, res.clone());
+        }
       } catch (e) { /* offline: keep whatever copy is already stored */ }
     }
     await self.skipWaiting();
@@ -164,15 +192,46 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-/* Resolves to the response, or to null if it fails or takes too long.
+/* Ask the PC for a file, and really stop asking at the deadline.
 
-   Returns null rather than rejecting because every caller here has the same
-   answer to both - use the stored copy - and a promise that can reject would
-   put a try/catch around the one line that decides which build gets shown. */
-function withTimeout(promise, ms) {
-  let timer;
-  const giveUp = new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); });
-  return Promise.race([promise.catch(() => null), giveUp])
+   Resolves to the response, or to null if it fails or takes too long. Null
+   rather than a rejection because every caller here has the same answer to
+   both - use the stored copy - and a promise that can reject would put a
+   try/catch around the one line that decides which build gets shown.
+
+   The abort is the point. This was a plain race between the fetch and a timer,
+   which stopped the *waiting* at the deadline but left the request itself
+   running to completion in the background. For a megabytes-long index.html
+   over a phone link that is minutes of the link spent on a response nobody
+   will ever look at, once per page load, against a browser limit of six
+   connections to the host and a small single-machine web server behind it -
+   so the offline save was left contending with the launch of the very page
+   that started it. A timeout that does not cancel is not a timeout. */
+const NOT_MODIFIED = Symbol('not-modified');
+
+function fetchFresh(url, ms, stored) {
+  const ctl = new AbortController();
+  // Infinity for the install, which is a wait the user asked for; a real
+  // deadline for a page load, which is not.
+  const timer = Number.isFinite(ms) ? setTimeout(() => ctl.abort(), ms) : null;
+  // The conditional request is built here, from the copy in Cache Storage,
+  // rather than left to the browser's own cache via `cache: 'no-cache'`.
+  //
+  // That was the first attempt and it did nothing: the browser never had a
+  // stored copy to revalidate against, so it sent no If-Modified-Since and the
+  // server had no choice but to send the whole page. A 7 MB response is not
+  // something an HTTP cache can be relied on to keep - there are per-entry size
+  // limits, and they are neither documented nor ours to set. Cache Storage, on
+  // the other hand, is the copy this worker put there on purpose and can count
+  // on. Asking from there turns "has the page changed?" into a question we know
+  // will be asked properly, on any browser, at any page size.
+  const headers = {};
+  const since = stored && stored.headers.get('last-modified');
+  if (since) headers['if-modified-since'] = since;
+  return fetch(new Request(url, {
+    headers, cache: 'no-store', credentials: 'same-origin', signal: ctl.signal,
+  })).then((res) => (res && res.status === 304 ? NOT_MODIFIED : res))
+    .catch(() => null)
     .then((res) => { clearTimeout(timer); return res; });
 }
 
@@ -190,22 +249,30 @@ self.addEventListener('fetch', (event) => {
     // off, the network is slow, the server answers with an error - falls
     // through to the stored copy, which is the whole point of the worker.
     if (isShell(req, url)) {
-      // A fresh Request built from the URL, NOT fetch(req, {cache:'no-store'}).
+      // fetchFresh builds a fresh Request from the URL, NOT fetch(req, init).
       // Passing an init alongside a navigation request throws outright -
       // "Cannot construct a Request with a RequestInit whose mode member is set
       // as 'navigate'" - and the throw is indistinguishable from the PC being
       // off, so every page load fell straight back to the stored copy. That is
       // the exact request this branch exists for, so the bug hid the whole
       // feature while a page-level fetch of the same file looked fine.
-      const fresh = await withTimeout(
-        fetch(new Request(url.href, { cache: 'no-store', credentials: 'same-origin' })),
-        SHELL_TIMEOUT_MS);
-      if (fresh && fresh.status === 200 && fresh.type === 'basic') {
-        cache.put(req, fresh.clone());
+      // One stored entry for the page, whatever URL it was asked for by.
+      // './' and './index.html' are the same megabytes from this server, so
+      // storing under the requested URL kept a second whole copy of the page
+      // as soon as anyone opened the bare directory address - and counted it
+      // as data the user had saved. The manifest is matched by isShell() too
+      // and is a genuinely different file, so it keeps its own name.
+      const isManifest = url.pathname.endsWith('/manifest.webmanifest');
+      const key = isManifest ? req : './index.html';
+      const stored = await cache.match(key, { ignoreSearch: true });
+      const fresh = await fetchFresh(url.href, SHELL_TIMEOUT_MS, stored);
+      // The PC says it is still the copy we hold. That is the usual answer, and
+      // it now costs one small round trip instead of the whole page.
+      if (fresh === NOT_MODIFIED && stored) return stored;
+      if (fresh && fresh !== NOT_MODIFIED && fresh.status === 200 && fresh.type === 'basic') {
+        cache.put(key, fresh.clone());
         return fresh;
       }
-      const stored = await cache.match(req, { ignoreSearch: true })
-        || await cache.match('./index.html');
       if (stored) return stored;
       // Nothing stored and nothing fetched: let the real request decide what
       // the failure looks like rather than inventing one.
@@ -216,14 +283,13 @@ self.addEventListener('fetch', (event) => {
     // same reason. They are small, and they are what tells the app a
     // conversion is newer than the copy it holds.
     if (isIndex(url)) {
-      const fresh = await withTimeout(
-        fetch(new Request(url.href, { cache: 'no-store', credentials: 'same-origin' })),
-        SHELL_TIMEOUT_MS);
-      if (fresh && fresh.status === 200 && fresh.type === 'basic') {
+      const stored = await cache.match(req, { ignoreSearch: true });
+      const fresh = await fetchFresh(url.href, SHELL_TIMEOUT_MS, stored);
+      if (fresh === NOT_MODIFIED && stored) return stored;
+      if (fresh && fresh !== NOT_MODIFIED && fresh.status === 200 && fresh.type === 'basic') {
         cache.put(req, fresh.clone());
         return fresh;
       }
-      const stored = await cache.match(req, { ignoreSearch: true });
       if (stored) return stored;
       return fetch(req);
     }

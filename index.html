@@ -4402,6 +4402,14 @@ async function offUpdateNow(btn) {
   const note = document.getElementById('off-note');
   const was = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '確認中...'; }
+  // Something that visibly moves, because the wait below can legitimately run
+  // into minutes and a button that has said the same word for two of them is
+  // indistinguishable from one that has hung - which is how this was read, and
+  // fairly so.
+  const startedAt = Date.now();
+  const ticking = setInterval(() => {
+    if (btn) btn.textContent = `確認中... ${Math.round((Date.now() - startedAt) / 1000)}秒`;
+  }, 1000);
   const before = await offWorkerBuild();
   try {
     const reg = await navigator.serviceWorker.getRegistration();
@@ -4415,7 +4423,16 @@ async function offUpdateNow(btn) {
     const pending = reg.installing || reg.waiting;
     if (pending) {
       await new Promise((res) => {
-        const t = setTimeout(res, 15000);
+        // Long, because installing a build whose page really did change means
+        // downloading that page, and this one is megabytes over a phone link.
+        // Fifteen seconds was under that, so a perfectly healthy update
+        // reported itself as "取得しましたが切り替わりませんでした" and the
+        // advice that followed - close the app completely and reopen it -
+        // threw away the install that was seconds from finishing. An update
+        // that only changes the worker no longer downloads the page at all
+        // (the shell is revalidated, not refetched), so this is the ceiling
+        // for the rare slow case rather than the usual wait.
+        const t = setTimeout(res, 180000);
         pending.addEventListener('statechange', () => {
           if (pending.state === 'activated' || pending.state === 'redundant') {
             clearTimeout(t); res();
@@ -4441,6 +4458,7 @@ async function offUpdateNow(btn) {
   } catch (e) {
     note.textContent = `更新できませんでした: ${(e && e.message) || e}`;
   } finally {
+    clearInterval(ticking);
     if (btn) { btn.disabled = false; btn.textContent = was; }
     await offRefresh();
   }
