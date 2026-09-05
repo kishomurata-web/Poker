@@ -38,7 +38,8 @@ const MODE = process.argv.includes('--fail') ? 'fail'
             : process.argv.includes('--revalidate') ? 'revalidate'
               : process.argv.includes('--slow') ? 'slow'
                 : process.argv.includes('--probe') ? 'probe'
-                  : process.argv.includes('--dead') ? 'dead' : 'ok';
+                  : process.argv.includes('--dead') ? 'dead'
+                    : process.argv.includes('--die') ? 'die' : 'ok';
 
 const NFILES = 12;
 function writeDataset(stamp) {
@@ -78,6 +79,10 @@ function writeDataset(stamp) {
     console.log(`\n  --${MODE} needs --new: it tests reporting the old worker does not have.\n`);
     process.exit(0);
   }
+  if (MODE === 'die' && !process.argv.includes('--new')) {
+    console.log('\n  --die needs --new: the old worker cannot be resumed.\n');
+    process.exit(0);
+  }
   if (MODE === 'dead' && !process.argv.includes('--new')) {
     console.log('\n  --dead needs --new: the old worker has no give-up rule.\n');
     process.exit(0);
@@ -115,6 +120,9 @@ function writeDataset(stamp) {
   // every five seconds it cannot. Turning the deadline down rather than the
   // heartbeat up keeps the thing under test - the worker - exactly as shipped.
   if (MODE === 'slow') html = html.replace('OFF.accepted ? 180 : 20', 'OFF.accepted ? 12 : 20');
+  // Eight seconds of silence, not the thirty a five-second pulse earns. The
+  // recovery under test is the same either way; only the waiting is shortened.
+  if (MODE === 'die') html = html.replace('OFF.accepted ? OFF.stallAfter : 20', 'OFF.accepted ? 8 : 20');
   fs.writeFileSync(path.join(ROOT, 'index.html'), html);
   // Default: the old worker, which is what a device that has not picked up the
   // new one is still running. --new runs the current one, to check that the
@@ -136,6 +144,17 @@ function writeDataset(stamp) {
   if (MODE === 'crash') {
     sw = sw.replace("say({ url, phase: 'start' });",
       "say({ url, phase: 'start' }); if (/7s3h3d/.test(url)) throw new Error('injected crash');");
+  }
+  // A worker that stops dead in the middle of a save - which is what a phone
+  // browser does to a service worker that has been running too long, and is
+  // the fault the page now recovers from instead of reporting. Once only, so
+  // the resumed run can get past it and the test can see it finish.
+  if (MODE === 'die') {
+    sw = sw.replace('const CACHE_VERSION', 'let diedOnce = false;\nconst CACHE_VERSION')
+      .replace("say({ url, phase: 'start' });",
+        "say({ url, phase: 'start' });"
+        + " if (!diedOnce && /7s3h5d/.test(url)) { diedOnce = true; clearInterval(beat);"
+        + " await new Promise(() => {}); }");
   }
   // A worker that hears the request and never says anything at all.
   if (MODE === 'mute') sw = sw.replace("if (msg.type === 'CACHE_URLS') {", "if (false) {");
@@ -372,11 +391,13 @@ function writeDataset(stamp) {
       // the same element the progress counter does, so by the end of a save
       // that recovered there is nothing left on screen to show it ever fired.
       const stalls = [];
+      const resumed = [];
       const target = document.getElementById('off-state');
       new MutationObserver(() => {
         if (/応答が止まりました|応答がありません/.test(target.textContent)) {
           stalls.push(target.textContent);
         }
+        if (/中断を検出しました/.test(target.textContent)) resumed.push(1);
       }).observe(target, { childList: true, characterData: true, subtree: true });
       const run = offSaveAll(PF_DEPTHS[0].id, btns[0]);
       // A worker that never answers means the save never returns - which is
@@ -386,7 +407,12 @@ function writeDataset(stamp) {
       const c = await caches.open('gto-v2');
       return {
         stalls: stalls.length,
+        resumed: resumed.length,
         stored: (await c.keys()).length,
+        // Only the data files. The shell and the indexes are stored too, and a
+        // PC serving no data at all still answers those - so counting
+        // everything says "5 stored" about a run in which nothing arrived.
+        dataStored: (await c.keys()).filter((k) => /\.json\.gz$/.test(k.url)).length,
         state: document.getElementById('off-state').textContent,
         note: document.getElementById('off-note').textContent,
         build: document.getElementById('off-build').textContent,
@@ -468,6 +494,17 @@ function writeDataset(stamp) {
       ok('and the refusals really happened, so the test is testing something',
         refused > 0, `refused ${refused}`);
       console.log(`        refused: ${refused}`);
+    } else if (MODE === 'die') {
+      // A worker killed mid-save. The page used to hand this back to the user
+      // as "close the app and open it again", which made them the retry loop.
+      ok('a worker that dies mid-save is noticed and the save restarted',
+        saved.resumed > 0, `the page never restarted it (${saved.resumed})`);
+      ok('and the restart finishes the job rather than reporting a failure',
+        /保存しました/.test(saved.state) && !/失敗/.test(saved.state), saved.state);
+      // The point of resuming rather than starting over: what already arrived
+      // is skipped, so each attempt gets further instead of repeating itself.
+      ok('and every file ends up stored',
+        saved.stored > NFILES, JSON.stringify({ stored: saved.stored }));
     } else if (MODE === 'dead') {
       // The run that mattered: nothing is arriving, and every attempt costs a
       // full header timeout. Working through all of them proves nothing the
@@ -477,7 +514,7 @@ function writeDataset(stamp) {
       // Five attempted out of twelve. On the real list it is five out of three
       // hundred, which is the whole point.
       ok('a save where nothing arrives stops instead of grinding through the list',
-        /最初の 5 件/.test(saved.note) && /残りは試していません/.test(saved.note),
+        /5 件が続けて失敗/.test(saved.note) && /残りは試していません/.test(saved.note),
         JSON.stringify({ state: saved.state, note: saved.note }));
       ok('and says it stopped rather than implying the rest are still coming',
         /中止しました/.test(saved.state), saved.state);
@@ -485,8 +522,8 @@ function writeDataset(stamp) {
         /PC sent nothing for/.test(saved.note), saved.note);
       ok('and points at the one button that can tell PC from file',
         /PCに繋がるか確認/.test(saved.note), saved.note);
-      ok('and nothing was stored, since nothing arrived',
-        saved.stored <= 3, JSON.stringify({ stored: saved.stored }));
+      ok('and no data file was stored, since none arrived',
+        saved.dataStored === 0, JSON.stringify({ dataStored: saved.dataStored }));
     } else if (MODE === 'slow') {
       // The complaint this answers: "応答が止まりました" on a save that was
       // working. A worker that is alive says so every five seconds, so the

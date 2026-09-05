@@ -53,7 +53,7 @@ const CACHE_VERSION = 'gto-v2';
 
    Not derived from CACHE_VERSION: bumping that throws away the stored data,
    which is exactly what must NOT happen just because the worker changed. */
-const SW_BUILD = '2026-09-05b heartbeat';
+const SW_BUILD = '2026-09-05c resume';
 /* './' is deliberately not here even though it is a real, reachable URL.
    The server answers it with index.html, so listing it stored the same
    megabytes twice and, far worse, downloaded them twice on every install -
@@ -131,6 +131,10 @@ const SAVE_GIVE_UP_AFTER = 5;
 // for the answer, and "no answer in fifteen seconds" from a static file server
 // on the same tailnet is already the answer.
 const PROBE_TIMEOUT_MS = 15000;
+// How often a running save says it is still there. Sent to the page in the
+// acknowledgement too, so the page can set its own patience from it rather than
+// from a number written down twice in two files that then drift apart.
+const SAVE_BEAT_MS = 5000;
 
 /* Is this request for the page, rather than for data? Navigations count
    whatever they are spelled as, since that is the request that decides which
@@ -362,6 +366,9 @@ self.addEventListener('message', (event) => {
         msg.port.postMessage({
           phase: 'accepted', done: 0, failed: 0, pending: 0,
           total: (msg.urls || []).length, bytes: 0, build: SW_BUILD,
+          // So the page can wait exactly as long as this worker's silence
+          // needs to mean something, instead of guessing at it.
+          beatMs: SAVE_BEAT_MS,
         });
       }
     } catch (e) { /* the port is gone; the save below will find out too */ }
@@ -382,6 +389,17 @@ self.addEventListener('message', (event) => {
           }
         } catch (e) { /* the port is gone; the save below will find out too */ }
       };
+      // The pulse starts BEFORE the cache is opened, not after the loop begins.
+      //
+      // A save that went quiet for three minutes was reported as stopped, and it
+      // was - but the pulse had not started yet, so the report could not say
+      // whether the worker was stuck in caches.open() or had been killed
+      // outright. Covering every step from here on makes silence mean exactly
+      // one thing: this worker is gone. Browsers do terminate service workers
+      // that run long, phones most of all, and a save of hundreds of megabytes
+      // is exactly the sort of long.
+      const beat = setInterval(() => tell({ phase: 'alive' }), SAVE_BEAT_MS);
+      try {
       tell({ phase: 'opening' });
       const cache = await caches.open(CACHE_VERSION);
       tell({ phase: 'opened' });
@@ -493,13 +511,6 @@ self.addEventListener('message', (event) => {
         }
       };
 
-      // A pulse for as long as this is alive, so that silence means one thing
-      // instead of two. A save that is merely slow - one big file on a slow
-      // link, which is normal here - looked identical to a worker that had been
-      // killed, and the panel accused the user of the second whenever it saw
-      // the first. Anything arriving resets the page's watchdog, so with this
-      // running, a stalled panel really does mean a stopped worker.
-      const beat = setInterval(() => say({ phase: 'alive' }), 5000);
       // Everything from here can throw, and a throw inside waitUntil goes
       // nowhere: the page is left waiting on a promise that will never settle,
       // with an empty panel and no clue. Whatever happens, the save reports an
@@ -518,6 +529,7 @@ self.addEventListener('message', (event) => {
       // at all walks itself down to one at a time and keeps going.
       let next = 0;
       let gaveUp = false;
+      let consecutiveFails = 0;
       const retry = [];
       const pump = async (id) => {
         while (!gaveUp && next < urls.length) {
@@ -548,20 +560,26 @@ self.addEventListener('message', (event) => {
             // the one width that has been shown to work on this device is one.
             limit = 1;
             streak = 0;
-            // Nothing has arrived at all and this is the fifth to fail. That is
-            // not five unlucky files, it is the PC, the link, or the path being
-            // wrong for all of them - and every one of these costs a 30s
-            // timeout, so carrying on means hours of grinding towards an answer
-            // already visible. Stop and say so while the reason is still on
-            // screen. The handful collected still get their second pass, which
-            // is a fair check on whether it was a passing blip.
-            if (done === 0 && pending >= SAVE_GIVE_UP_AFTER) {
+            // Five failures in a row. That is not five unlucky files, it is the
+            // PC, the link, or the folder being wrong for all of them - and
+            // every one of these costs a 30s timeout, so carrying on means hours
+            // of grinding towards an answer already visible. Stop and say so
+            // while the reason is still on screen. The handful collected still
+            // get their second pass, which is a fair check on a passing blip.
+            //
+            // In a row, rather than "nothing has succeeded yet": the head of the
+            // list is the page and the indexes, which a PC serving no data files
+            // at all still answers perfectly well. Counting those as successes
+            // kept the rule from ever firing in exactly the case it is for.
+            consecutiveFails++;
+            if (consecutiveFails >= SAVE_GIVE_UP_AFTER) {
               gaveUp = true;
               return;
             }
           } else {
             done++;
             streak++;
+            consecutiveFails = 0;
             if (streak >= SAVE_RAMP_AFTER && limit < SAVE_CONCURRENCY) {
               limit++;
               streak = 0;
@@ -600,6 +618,13 @@ self.addEventListener('message', (event) => {
         // bug behind it, and the message is the only way it will ever be seen
         // - there is no console on the phone this runs on.
         say({ finished: true, fatal: (e && (e.stack || e.message)) || String(e) });
+      }
+      } catch (e) {
+        // Anything that went wrong before the save proper began - opening the
+        // cache is the whole of it. `tell` rather than `say`, because `say` is
+        // declared past the point that can throw and reporting a fault must not
+        // depend on having got past it.
+        tell({ finished: true, fatal: (e && (e.stack || e.message)) || String(e) });
       } finally {
         clearInterval(beat);
       }

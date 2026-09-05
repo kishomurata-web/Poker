@@ -4276,12 +4276,19 @@ async function renderStudyPostflop(pathEl) {
    up `tailscale serve`, which fronts the same server with a real certificate.
 */
 
-const OFF = { busy: false };
+const OFF = { busy: false, stallAfter: 180 };
 // Longer than the worker's own probe deadline, so that a probe which times out
 // is reported by the worker as "the PC did not answer" rather than by the page
 // as "the worker did not answer". Two different faults, and the shorter wait
 // would have hidden the first behind the second.
 const PROBE_WAIT_MS = 20000;
+// A stalled save restarts itself this many times before it gives up and says
+// so. Each restart skips whatever already arrived, so these are not repeats of
+// the same work - they are the same walk down the list, getting further each
+// time. Bounded so a genuinely broken setup still reaches an ending.
+const SAVE_RESUME_LIMIT = 5;
+// Marks a run abandoned by the watchdog rather than finished by the worker.
+const STALLED = Symbol('stalled');
 
 function offSupported() {
   return 'serviceWorker' in navigator && window.isSecureContext;
@@ -4685,14 +4692,27 @@ async function offSaveAll(depthId, btn) {
   // slow link legitimately takes minutes.
   let lastBeat = Date.now();
   let stalled = false;
+  let onStalled = null;
+  let resumes = 0;
   // Anything arriving clears the stall, so a save that recovers on its own
   // stops claiming to be stuck.
   const beat = () => { lastBeat = Date.now(); stalled = false; };
   const watchdog = setInterval(() => {
     const quiet = (Date.now() - lastBeat) / 1000;
-    const deadline = OFF.accepted ? 180 : 20;
+    const deadline = OFF.accepted ? OFF.stallAfter : 20;
     if (quiet < deadline || stalled) return;
     stalled = true;
+    // Silence from a worker that pulses means it is gone, and a gone worker is
+    // something to recover from rather than to report. Start it again; the
+    // files already stored are skipped, so this picks up where it stopped.
+    if (resumes < SAVE_RESUME_LIMIT && onStalled) {
+      resumes++;
+      state.textContent = '中断を検出しました';
+      note.textContent = `保存が ${Math.round(quiet)} 秒止まったため自動的に再開します`
+        + `（${resumes} 回目）。保存済みのファイルはやり直しません`;
+      onStalled();
+      return;
+    }
     state.textContent = OFF.accepted ? '応答が止まりました' : '応答がありません';
     note.textContent = OFF.accepted
       ? `保存処理が ${Math.round(quiet)} 秒間なにも返していません`
@@ -4728,6 +4748,11 @@ async function offSaveAll(depthId, btn) {
       // responding" send you to different places, and only the second is worth
       // acting on.
       OFF.build = p.build || null;
+      // Six missed pulses. A worker that says it is alive every five seconds
+      // has told us how long its silence needs to be before it means anything,
+      // so there is no reason to sit through three minutes of it. An older
+      // worker sends no interval and keeps the long, patient wait.
+      OFF.stallAfter = p.beatMs ? Math.max(30, (p.beatMs * 6) / 1000) : 180;
       note.textContent = `保存を開始しました（${p.build || '不明なバージョン'}）`;
       return;
     }
@@ -4782,9 +4807,33 @@ async function offSaveAll(depthId, btn) {
       note.textContent = `取得中: ${p.url.split('/').pop()}`;
     }
   };
-  OFF.accepted = false;
-  OFF.build = null;
-  const res = await offAsk({ type: 'CACHE_URLS', urls }, onProgress);
+  // Start again where it stopped, rather than telling the user to.
+  //
+  // A worker that goes silent is not a fault the app can prevent: browsers
+  // terminate service workers that run long, and a save of hundreds of
+  // megabytes over a phone link is exactly that. The old answer - "close the
+  // app and open it again" - made the user the retry loop, and every round of
+  // it cost them the whole ceremony to get back to the same screen.
+  //
+  // Resuming is cheap and correct because the worker skips any file already in
+  // the cache, so a fresh run is not a fresh download: it walks the list, finds
+  // what arrived last time, and carries on from the first thing that did not.
+  // Each attempt therefore gets strictly further than the last.
+  let res = null;
+  for (let attempt = 1; ; attempt++) {
+    OFF.accepted = false;
+    OFF.build = null;
+    beat();
+    const stalledOut = new Promise((resolve) => { onStalled = () => resolve(STALLED); });
+    res = await Promise.race([
+      offAsk({ type: 'CACHE_URLS', urls }, onProgress),
+      stalledOut,
+    ]);
+    onStalled = null;
+    if (res !== STALLED) break;
+    if (attempt >= SAVE_RESUME_LIMIT) { res = null; break; }
+    stalled = false;
+  }
   if (poll) clearInterval(poll);
   clearInterval(watchdog);
   OFF.busy = false;
@@ -4826,7 +4875,7 @@ async function offSaveAll(depthId, btn) {
   // come - and the run is over.
   if (res && res.gaveUp) {
     state.textContent = '保存を中止しました';
-    note.textContent = `最初の ${res.failed} 件が続けて失敗したため、残りは試していません。`
+    note.textContent = `${res.failed} 件が続けて失敗したため、残りは試していません。`
       + (res.firstError ? `理由: ${res.firstError}。` : '')
       + '「PCに繋がるか確認」を押すと、PC側か個々のファイル側かが分かります';
     return;
