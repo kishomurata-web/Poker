@@ -1,0 +1,10 @@
+# test_offline.js drives a real browser, so running the tests installs
+# playwright here. The collector's batch files install it the same way on the
+# PC. It is a dependency of the tests, not part of the app the phone stores.
+node_modules/
+package.json
+package-lock.json
+
+# What the converter writes for the app to serve. Several gigabytes, rebuilt
+# from the collector's cache by convert.bat.
+postflop/

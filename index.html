@@ -2969,8 +2969,8 @@ function pfBehind(pair, pot, side, bb) {
 function pfActionTuples(node, pair) {
   // Nothing to fold to means nobody has bet yet, so chips going in here are a
   // bet rather than a raise. Postflop that reading is exact: flop_OOP,
-  // flop_IP after a check, and both turn nodes all offer CHECK, while every
-  // node built from facing a bet offers FOLD.
+  // flop_IP after a check, and the two opening turn nodes all offer CHECK,
+  // while every node built from facing a bet offers FOLD.
   const isBet = !node.actions.some((a) => a.type === 'FOLD');
   // The data gives an all-in no size at all. The pot stood in for it, which
   // read as a 5.5bb shove in a 20bb game - the one number on the button that
@@ -3400,11 +3400,25 @@ const PF_NODE_LABEL = {
   flop_IP_vs_bet75: 'IP（OOPの75%ベットに直面）',
   turn_OOP: 'ターン OOP 先手', turn_IP: 'ターン IP（チェック後）',
 };
+/* Turn defence is named by the bet as a share of the pot, and the sizes the
+   site offers on the turn are not the flop's four: 10, 13, 15, 20, 25, 33, 40,
+   50, 55, 75, 83, 100, 125, 150 and 200 all appear in the collection. Listing
+   them above would mean editing this file every time a collection turns up a
+   size nobody had seen, and the failure - a raw node key on screen - is silent
+   enough to ship. */
+function pfNodeName(node) {
+  if (PF_NODE_LABEL[node]) return PF_NODE_LABEL[node];
+  const m = /^turn_(OOP|IP)_vs(\d+)$/.exec(node);
+  if (!m) return node;
+  return m[1] === 'IP'
+    ? `ターン IP（OOPの${m[2]}%ベットに直面）`
+    : `ターン OOP（IPの${m[2]}%ベットに直面）`;
+}
 function pfNodeLabel(pair, nodeKey, board) {
   const [line, node] = nodeKey.split('|');
   const boardStr = board ? board.join(' ') : '';
   const lineTxt = line === 'FLOP' ? '' : ' / ' + pfLineLabel(pair, line);
-  return `${pair.name.replace(/_/g, ' ')}${lineTxt} / ${PF_NODE_LABEL[node] || node}` +
+  return `${pair.name.replace(/_/g, ' ')}${lineTxt} / ${pfNodeName(node)}` +
     (boardStr ? ` / ${boardStr}` : '');
 }
 
@@ -3834,7 +3848,8 @@ async function pfApply(node, tuples, actionIdx, myHandId) {
   const next = pfResolveNext(state.pf.data, act.next);
   if (!next) {
     // No collected node past this action - a donk bet, an uncollected bet
-    // size, any bet on the turn, or a turn line with no cards collected at all.
+    // size, a raise over a turn bet, a turn that checked through (no river was
+    // collected), or a turn line with no cards collected at all.
     state.endedByMissingData = act.type !== 'FOLD';
     await endHand(myHandId);
     return;
@@ -4186,7 +4201,7 @@ async function renderStudyPostflop(pathEl) {
   pathEl.appendChild(cur);
   const here = document.createElement('button');
   here.className = 'crumb current';
-  here.textContent = (PF_NODE_LABEL[pf.nodeKey.split('|')[1]] || pf.nodeKey);
+  here.textContent = pfNodeName(pf.nodeKey.split('|')[1]);
   pathEl.appendChild(here);
 
   if (!node) {
