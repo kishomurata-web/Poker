@@ -913,7 +913,7 @@
       <span id="st-counts"></span>
     </div>
     <div class="stats-row"><span>正答率 <b id="st-acc">-</b></span></div>
-    <div class="stats-row"><span>平均EVスコア <b id="st-ev">-</b></span></div>
+    <div class="stats-row"><span>平均GTOスコア <b id="st-ev">-</b></span></div>
   </div>
 </aside>
 
@@ -924,7 +924,7 @@
       <div class="tier-title" id="popup-title">最頻アクションです！</div>
       <div class="detail-row">あなたの選択: <b id="popup-chosen">-</b></div>
       <div class="detail-row">最頻アクション: <b id="popup-best">-</b></div>
-      <div class="detail-row" id="popup-ev-row">EVスコア: <b id="popup-ev">-</b></div>
+      <div class="detail-row" id="popup-ev-row">GTOスコア: <b id="popup-ev">-</b></div>
       <div class="popup-btn-row">
         <button id="popup-info" class="secondary"><svg class="btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="2.4"/><path d="M9 3.4 V20.6 M15 3.4 V20.6 M3.4 9 H20.6 M3.4 15 H20.6"/></svg>レンジ表</button>
         <button id="popup-ok">続ける</button>
@@ -1121,15 +1121,11 @@ function evLossFor(node, actionIdx, handIdx) {
   return i >= 0 && i < EV_LOSS.length ? EV_LOSS[i] / 1000 : null;
 }
 
-/* The headline number: 100% means the choice gave up no EV at all, 0% means it
-   gave up at least `evLossFull` (1bb for Chip EV, so "gave up 0.5bb of the best
-   action's EV" reads as 50%). Deliberately NOT a "rank among the available
-   actions" score - that one rates a 1.5bb blunder at 90% whenever the only
-   worse option is a wild all-in. */
-function evScoreFromLoss(spot, loss) {
-  if (loss === null || loss === undefined) return null;
-  const full = spot.evLossFull || 1;
-  return Math.max(0, Math.min(100, Math.round(100 * (1 - loss / full))));
+/* The pot the decision is being made into: everything in the middle, including
+   the bet standing in front of the hero. Same quantity the solver site divides
+   its EV loss by, and potTotal() already computes it on every street. */
+function scoringPot() {
+  return potTotal();
 }
 
 /* Renders the 13x13 grid + legend into the given containers.
@@ -2380,11 +2376,56 @@ function paintAction(btn, act, nonAllinRaises) {
   btn.style.background = actionColorFor(act, nonAllinRaises);
 }
 
+/* Frequencies here are tenths of a percent times ten - 10000 is a pure action -
+   so 10 is the 0.1% below which the solver site stops treating a size as part
+   of the strategy at all, and the mixed cut is a share of the top action rather
+   than a flat percentage. A flat 5% got this wrong in both directions: it
+   demoted a size played 4.4% alongside a 35.9% favourite, and promoted one
+   played 5% against a 90% favourite. */
+const FREQ_MIN = 10;
+const MIX_SHARE = 0.1;
+
 function tierFor(chosenFreq, maxFreq) {
   if (chosenFreq === maxFreq) return 'best';
-  if (chosenFreq >= 500) return 'ok';
-  if (chosenFreq > 0) return 'rare';
+  if (chosenFreq >= maxFreq * MIX_SHARE) return 'ok';
+  if (chosenFreq >= FREQ_MIN) return 'rare';
   return 'never';
+}
+
+/* -1 to +1, matching the solver site's own per-decision score (see SCORING.md).
+   Inside the strategy the number is the action's share of the top action and EV
+   never enters; outside it, giving up 5% of the pot is the whole -1 and nothing
+   below that costs more. The two halves are on one scale so a session is just
+   their mean. */
+function gtoScoreFor(tier, chosenFreq, maxFreq, loss, pot) {
+  if (tier === 'best') return 1;
+  if (tier === 'ok') return maxFreq ? chosenFreq / maxFreq : null;
+  if (tier === 'rare') return 0;
+  if (loss === null || loss === undefined || !pot) return null;
+  return Math.max(-1, -20 * loss / pot);
+}
+
+/* The running session average behind the counter in the drawer. Kept in whole
+   percent so it matches what the popup printed, rather than drifting from it. */
+function countScore(score) {
+  if (score === null) return;
+  state.stats.evSum += Math.round(score * 100);
+  state.stats.evCount += 1;
+}
+
+/* The popup's score line. A null score means the spot has no EV table to price
+   the mistake against, and the row goes away rather than printing a 0 that
+   would read as "this cost you nothing". The colour is the tier's own, because
+   the score and the tier are now two readings of one rule. */
+function renderDecisionScore(score, loss, color, unit) {
+  const row = document.getElementById('popup-ev-row');
+  const el = document.getElementById('popup-ev');
+  if (score === null) { row.style.display = 'none'; return; }
+  row.style.display = '';
+  el.textContent = Math.round(score * 100) + '%' +
+    (loss === null || loss === undefined ? ''
+      : `　(EVロス ${loss < 0.005 ? '0' : loss.toFixed(2)}${unit})`);
+  el.style.color = color;
 }
 /* One pictogram family: same 56x56 frame, same 19px disc, same stroke weight,
    drawn in currentColor so each tier just sets a colour. Solid disc = the
@@ -2441,24 +2482,11 @@ function onHeroAction(chosenAction, allActions, myHandId) {
 
   const node = state.spot.nodes[state.path.join('-')];
   const loss = evLossFor(node, allActions.indexOf(chosenAction), handIdx);
-  const evScore = evScoreFromLoss(state.spot, loss);
-  const evRow = document.getElementById('popup-ev-row');
-  const evEl = document.getElementById('popup-ev');
-  if (evScore === null) {
-    evRow.style.display = 'none';
-  } else {
-    evRow.style.display = '';
-    const unit = state.spot.evUnit || '';
-    evEl.textContent = evScore + '%' +
-      `　(EVロス ${loss < 0.005 ? '0' : loss.toFixed(2)}${unit})`;
-    evEl.style.color = evScore >= 99 ? 'var(--best)'
-      : evScore >= 90 ? 'var(--ok)'
-      : evScore >= 60 ? 'var(--rare)' : 'var(--never)';
-    state.stats.evSum += evScore;
-    state.stats.evCount += 1;
-  }
+  const score = gtoScoreFor(tier, chosenFreq, maxFreq, loss, scoringPot());
+  renderDecisionScore(score, loss, meta.color, state.spot.evUnit || '');
+  countScore(score);
   updateStatsUI();
-  recordDecision(state.spot.category, tier, evScore, loss);
+  recordDecision(state.spot.category, tier, score, loss);
   document.getElementById('tier-view').style.display = 'block';
   document.getElementById('grid-view').style.display = 'none';
   document.getElementById('overlay').classList.add('show');
@@ -3902,22 +3930,11 @@ function pfOnHeroAction(node, tuples, actionIdx, myHandId) {
     `${actionDisplayName(tuples[freqs.indexOf(maxFreq)])} - ${(maxFreq / 100).toFixed(1)}%`;
 
   const loss = pfEvLoss(node, actionIdx, comboIdx);
-  const evScore = evScoreFromLoss(state.spot, loss);
-  const evRow = document.getElementById('popup-ev-row');
-  const evEl = document.getElementById('popup-ev');
-  if (evScore === null) {
-    evRow.style.display = 'none';
-  } else {
-    evRow.style.display = '';
-    evEl.textContent = evScore + '%' + `　(EVロス ${loss < 0.005 ? '0' : loss.toFixed(2)}bb)`;
-    evEl.style.color = evScore >= 99 ? 'var(--best)'
-      : evScore >= 90 ? 'var(--ok)'
-      : evScore >= 60 ? 'var(--rare)' : 'var(--never)';
-    state.stats.evSum += evScore;
-    state.stats.evCount += 1;
-  }
+  const score = gtoScoreFor(tier, chosenFreq, maxFreq, loss, scoringPot());
+  renderDecisionScore(score, loss, meta.color, 'bb');
+  countScore(score);
   updateStatsUI();
-  recordDecision(state.spot.category, tier, evScore, loss);
+  recordDecision(state.spot.category, tier, score, loss);
 
   document.getElementById('tier-view').style.display = 'block';
   document.getElementById('grid-view').style.display = 'none';
@@ -5056,9 +5073,16 @@ function offInit() {
 
 /* ================= stats ================= */
 
-/* One record per hero decision: [timestamp, category, tier, evScore, evLoss*1000].
+/* One record per hero decision:
+   [timestamp, category, tier, unused, evLoss*1000, gtoScore*100].
+
    EV loss is kept in the solution's own units, which differ between Chip EV (bb)
-   and the ICM solutions - so it is only ever averaged within a category. */
+   and the ICM solutions - so it is only ever averaged within a category.
+
+   Slot 3 held the old score, which measured a mistake against a flat 1bb. The
+   score now measures it against the pot, so the two cannot be averaged together
+   and the new one takes a slot of its own: rows written before the change carry
+   no slot 5 and drop out of that metric instead of quietly skewing it. */
 const STATS_KEY = 'gtoPreflopTrainer.stats.v1';
 const STATS_CAP = 5000;
 let STATS = [];
@@ -5073,9 +5097,10 @@ function loadStats() {
 function persistStats() {
   try { localStorage.setItem(STATS_KEY, JSON.stringify(STATS)); } catch (e) { /* private mode */ }
 }
-function recordDecision(cat, tier, evScore, evLoss) {
-  STATS.push([Date.now(), cat, tier, evScore === null ? -1 : evScore,
-              evLoss === null ? -1 : Math.round(evLoss * 1000)]);
+function recordDecision(cat, tier, score, evLoss) {
+  STATS.push([Date.now(), cat, tier, -1,
+              evLoss === null || evLoss === undefined ? -1 : Math.round(evLoss * 1000),
+              score === null || score === undefined ? null : Math.round(score * 100)]);
   if (STATS.length > STATS_CAP) STATS.splice(0, STATS.length - STATS_CAP);
   persistStats();
 }
@@ -5093,7 +5118,7 @@ const CAT_COLOR = { chipev: '#3987e5', icm_25pct: '#d95926', icm_bubble: '#199e7
 const CAT_SHORT = { chipev: 'Chip EV', icm_25pct: 'ICM 25%', icm_bubble: 'ICM Bubble' };
 const METRICS = [
   { key: 'acc', label: '正答率', unit: '%', axis: '%' },
-  { key: 'ev', label: '平均EVスコア', unit: '%', axis: '%' },
+  { key: 'ev', label: '平均GTOスコア', unit: '%', axis: '%±' },
   { key: 'loss', label: '平均EVロス', unit: '', axis: '' },
 ];
 const WINDOWS = [
@@ -5155,14 +5180,14 @@ function renderStatsControls() {
 function renderStatTiles(rows) {
   const n = rows.length;
   const best = rows.filter((r) => r[2] === 'best').length;
-  const evs = rows.map((r) => r[3]).filter((v) => v >= 0);
+  const evs = rows.map((r) => r[5]).filter((v) => typeof v === 'number');
   const losses = rows.map((r) => r[4]).filter((v) => v >= 0);
   const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
   const lossAvg = state.statCat === 'all' ? null : avg(losses);
   const tiles = [
     { l: 'ハンド数', v: n ? String(n) : '-' },
     { l: '正答率（最頻一致）', v: n ? Math.round((best / n) * 100) + '%' : '-' },
-    { l: '平均EVスコア', v: evs.length ? Math.round(avg(evs)) + '%' : '-' },
+    { l: '平均GTOスコア', v: evs.length ? Math.round(avg(evs)) + '%' : '-' },
     { l: '平均EVロス', text: state.statCat === 'all',
       v: state.statCat === 'all' ? 'カテゴリごとに表示'
         : lossAvg === null ? '-'
@@ -5174,7 +5199,8 @@ function renderStatTiles(rows) {
 }
 
 const TIER_ORDER = ['best', 'ok', 'rare', 'never'];
-const TIER_NAME = { best: '最頻アクション', ok: '5%以上', rare: '低頻度', never: '頻度0' };
+const TIER_NAME = { best: '最頻アクション', ok: '最頻手の10%以上', rare: '低頻度',
+                    never: '頻度0.1%未満' };
 
 function renderTierBreakdown(rows) {
   const counts = {};
@@ -5205,7 +5231,7 @@ function seriesPoints(rows, metric, win) {
     const r = rows[i];
     let v;
     if (metric === 'acc') v = r[2] === 'best' ? 100 : 0;
-    else if (metric === 'ev') v = r[3] >= 0 ? r[3] : null;
+    else if (metric === 'ev') v = typeof r[5] === 'number' ? r[5] : null;
     else v = r[4] >= 0 ? r[4] / 1000 : null;
     vals.push(v);
     const from = win === 'w20' ? Math.max(0, vals.length - 20) : 0;
@@ -5277,9 +5303,12 @@ function renderChart(series) {
 
   const maxX = Math.max(...series.map((sr) => sr.pts[sr.pts.length - 1][0]), 2);
   const allY = series.flatMap((sr) => sr.pts.map((p) => p[1]));
-  const isPct = metric.axis === '%';
+  // The GTO score runs to -100, so it gets an axis with room below zero rather
+  // than a line that leaves the plot at the bottom gridline.
+  const isPct = metric.axis === '%' || metric.axis === '%±';
   let ticks;
-  if (isPct) ticks = [0, 25, 50, 75, 100];
+  if (metric.axis === '%±') ticks = [-100, -50, 0, 50, 100];
+  else if (isPct) ticks = [0, 25, 50, 75, 100];
   else ticks = niceTicks(0, Math.max(...allY));
   const yMin = ticks[0], yMax = ticks[ticks.length - 1];
   const sx = (v) => x0 + ((v - 1) / Math.max(1, maxX - 1)) * (x1 - x0);

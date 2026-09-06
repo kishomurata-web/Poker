@@ -138,3 +138,18 @@ Take the ratio at 0.1 until something contradicts it. The two readings only
 disagree where a node has one dominant action, so what would settle it is an
 action played 4% to 7% of the time alongside a `maxFreq` of 0.85 or more: the
 ratio rule scores that zero, the frequency rule gives it its share.
+
+## In the app
+
+`tierFor` and `gtoScoreFor` in `index.html` are this rule, and `scoringPot()`
+is the pot it divides by - `potTotal()`, which already counted the bet standing
+in front of the hero on every street. The score replaces the one that measured
+a mistake against a flat 1bb regardless of the pot it was played into.
+
+The two are on different scales, so a stats record keeps the new score in a
+slot of its own rather than averaging it into what came before; rows written
+earlier drop out of that metric instead of skewing it.
+
+`test_score.js` holds every action from every node above, with the score the
+site returned for it, and asserts the app lands on the same number. A change to
+`FREQ_MIN` or `MIX_SHARE` that the site would not agree with fails there.
