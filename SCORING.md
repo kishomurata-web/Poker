@@ -125,7 +125,14 @@ one number still open:
 | | frequency | ratio to `maxFreq` |
 | --- | --- | --- |
 | highest `INACCURACY` seen | 0.023 | 0.0593 |
-| lowest `CORRECT_MOVE` seen | 0.243 | 0.3866 |
+| lowest `CORRECT_MOVE` seen | 0.044 | 0.1226 |
 
-A single action played between 3% and 24% of the time will settle it, and will
-also say whether the cut is on the raw frequency or on the ratio.
+Read as a ratio the gap straddles a round number, and **0.1** is the tidiest
+thing that fits - every `INACCURACY` seen is under 0.0593 and every
+`CORRECT_MOVE` is over 0.1226. Read as a raw frequency, a cut somewhere around
+3% fits just as well, and nothing collected so far separates the two.
+
+They come apart only where one rule's answer is the other's opposite, so the
+sample that settles it is an action played 2.5% to 5% of the time at a node
+whose most frequent action is either well above 60% or below about 30% - and
+`maxFreq` has to be recorded alongside it, since that is the whole difference.
