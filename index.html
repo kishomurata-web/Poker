@@ -2129,7 +2129,7 @@ function renderTableOverlays() {
 
   updateStackBadges();
 
-  const pot = potTotal();
+  const pot = potDisplay();
   const potEl = document.getElementById('pot-pill');
   if (potEl) potEl.textContent = 'Pot ' + (Math.round(pot * 10) / 10) + 'bb';
   const ci = document.getElementById('center-info');
@@ -2211,6 +2211,22 @@ function potTotal() {
   let pot = 0;
   Object.values(state.committed || {}).forEach((v) => { pot += v || 0; });
   Object.values(state.bets || {}).forEach((v) => { pot += parseFloat(v) || 0; });
+  return pot;
+}
+
+/* What the pot pill reads, which is not the same question as what the pot is.
+   A bet is chosen as a fraction of the pot it was made into, so while a street
+   is live the pill holds the pot that street opened with: 3.35 sitting in front
+   of "Pot 6.7" is a half-pot bet, and stays legible as one. Folding the bet into
+   the number it is measured against is what made that hard to read.
+
+   The bets join the pill when the street closes, and the finished hand shows
+   the whole pot. Preflop is left live throughout - the blinds are the pot there,
+   and an open is read in blinds against a stack rather than as a share of 1.5. */
+function potDisplay() {
+  if (state.handOver || !state.pf) return potTotal();
+  let pot = 0;
+  Object.values(state.committed || {}).forEach((v) => { pot += v || 0; });
   return pot;
 }
 
@@ -2736,6 +2752,10 @@ async function endHand(myHandId) {
   if (myHandId !== state.handId) return;
   updateSeatActing(null);
   state.handOver = true;
+  // The pill was holding the street's opening pot so the bets on the felt could
+  // be read against it. Nothing is being sized any more, so it goes back to the
+  // whole pot - which needs a redraw, since no chips moved to trigger one.
+  renderTableOverlays();
   document.getElementById('action-buttons').style.display = 'none';
   document.getElementById('action-buttons').innerHTML = '';
   state.spot.positions.forEach((p) => revealSeatCards(p));

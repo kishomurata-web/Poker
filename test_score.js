@@ -236,6 +236,45 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript',
     popup.only.join(','));
   ok('nothing scored yet raises no popup', popup.silent === false);
 
+  /* The pot pill holds the street's opening pot so a bet can be read against
+     it, and the score divides by the pot including that bet. Two readings of
+     "the pot" that must not be collapsed into one: pointing scoringPot() at the
+     pill's number would quietly rescale every mistake the app has ever graded,
+     and nothing on screen would look wrong. */
+  const pots = await page.evaluate(() => {
+    const out = {};
+    state.handOver = false;
+    state.pf = null;
+    state.committed = {};
+    state.bets = { SB: '0.5', BB: '1' };
+    out.preflop = potDisplay();
+
+    state.pf = {};                       // the hand is postflop from here
+    state.committed = { SB: 0.5, BB: 2.8, BTN: 2.8 };
+    state.bets = { BB: '3.35' };
+    out.liveStreet = potDisplay();
+    out.scored = potTotal();
+
+    closeStreet();                       // the bet is called, the street closes
+    out.closed = potDisplay();
+
+    state.bets = { BB: '8', BTN: '8' };
+    state.handOver = true;
+    out.finished = potDisplay();
+    return out;
+  });
+
+  console.log('\nthe pot pill');
+  ok('preflop stays live, blinds and all', pots.preflop === 1.5, String(pots.preflop));
+  ok('a bet on the felt does not move the pill',
+    Math.abs(pots.liveStreet - 6.1) < 1e-9, String(pots.liveStreet));
+  ok('but the score still divides by the pot the bet is in',
+    Math.abs(pots.scored - 9.45) < 1e-9, String(pots.scored));
+  ok('closing the street folds the bet in',
+    Math.abs(pots.closed - 9.45) < 1e-9, String(pots.closed));
+  ok('and a finished hand shows the whole pot',
+    Math.abs(pots.finished - 25.45) < 1e-9, String(pots.finished));
+
   ok('nothing threw along the way', errors.length === 0, errors.join(' | '));
 
   await browser.close();
