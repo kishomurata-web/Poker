@@ -1108,15 +1108,34 @@ function actionDisplayName(act) {
   if (type === 'CALL') return `CALL (${bb}bb)`;
   return `${aggressionWord(act)} (${betsize}bb)`;
 }
-const RAISE_COLORS = ['#d98a2b', '#b8352d', '#8a2320', '#5e1717'];
+/* Bigger bet, hotter and darker. Six stops, and a menu of n sizes takes n of
+   them spread end to end rather than the first n - a fixed four-colour ramp
+   clamped its last entry, so a turn menu with six sizes painted the fourth,
+   fifth and sixth the same colour, which in the range grid (segments, no text)
+   is not a hard distinction but none at all.
+
+   Chosen against CIEDE2000 under normal vision and both red-green dichromacies
+   (test_colors.js holds the floors). Worst gap between neighbouring sizes: 10.7
+   on a four-size menu against the old ramp's 7.3, and 6.2 on a six-size menu
+   against its 0. The old ramp bottomed out at a near-black #5e1717 whose
+   neighbour was 7.3 away; the tail here keeps a hue you can name. Distance to
+   fold, check, call and all-in is 13.8, a shade better than the 13.6 it had. */
+const RAISE_RAMP = ['#eab13c', '#df7400', '#cd3105', '#a82a2c', '#7d2030', '#571a2e'];
+
+function raiseColor(idx, count) {
+  if (count <= 1) return RAISE_RAMP[0];
+  const last = RAISE_RAMP.length - 1;
+  const i = Math.min(Math.max(idx, 0), count - 1);
+  return RAISE_RAMP[Math.round((i * last) / (count - 1))];
+}
+
 function actionColorFor(act, nonAllinRaises) {
   const [code, type] = act;
   if (act[3]) return '#7d3a9e';
   if (type === 'FOLD') return '#5f9fc4'; // light blue — must not read as "empty cell"
   if (type === 'CHECK') return '#2f7d7d';
   if (type === 'CALL') return '#2f7d4f';
-  const idx = nonAllinRaises.findIndex((a) => a[0] === code);
-  return RAISE_COLORS[Math.min(Math.max(idx, 0), RAISE_COLORS.length - 1)];
+  return raiseColor(nonAllinRaises.findIndex((a) => a[0] === code), nonAllinRaises.length);
 }
 
 /* How often each of the 169 hands still holds this node's acting position,
