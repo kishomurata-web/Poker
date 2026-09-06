@@ -125,14 +125,16 @@ one number still open:
 | | frequency | ratio to `maxFreq` |
 | --- | --- | --- |
 | highest `INACCURACY` seen | 0.023 | 0.0593 |
-| lowest `CORRECT_MOVE` seen | 0.044 | 0.1226 |
+| lowest `CORRECT_MOVE` seen | 0.044 | **0.10100** |
 
-Read as a ratio the gap straddles a round number, and **0.1** is the tidiest
-thing that fits - every `INACCURACY` seen is under 0.0593 and every
-`CORRECT_MOVE` is over 0.1226. Read as a raw frequency, a cut somewhere around
-3% fits just as well, and nothing collected so far separates the two.
+Read as a ratio the window is 0.0593 to 0.101, and **0.1** is the only round
+number in it. The lowest `CORRECT_MOVE` yet found sits at 0.10100482859754542 -
+a tenth of a percent above that line - which is what a value just clearing a
+threshold looks like, and is a coincidence the raw-frequency reading has to
+explain away. Read as a raw frequency the cut is somewhere in 0.023 to 0.044,
+where 0.025, 0.03 and 0.04 all still fit.
 
-They come apart only where one rule's answer is the other's opposite, so the
-sample that settles it is an action played 2.5% to 5% of the time at a node
-whose most frequent action is either well above 60% or below about 30% - and
-`maxFreq` has to be recorded alongside it, since that is the whole difference.
+Take the ratio at 0.1 until something contradicts it. The two readings only
+disagree where a node has one dominant action, so what would settle it is an
+action played 4% to 7% of the time alongside a `maxFreq` of 0.85 or more: the
+ratio rule scores that zero, the frequency rule gives it its share.
