@@ -178,14 +178,63 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript',
   });
 
   // The session number the site printed, rebuilt from the six decisions behind
-  // it. This is the one that has to come out to a round 44%, because that is
-  // what was on the screen.
+  // it - and rebuilt the way the app builds it, one rounded percent at a time,
+  // because that is the arithmetic that has to land on the same 44%.
   const session = await page.evaluate(() => {
-    const s = [1, 0.3866481375534103, 0, 1, 1, -0.7428011174682247];
-    return Math.round((s.reduce((a, b) => a + b, 0) / s.length) * 100);
+    state.stats.evSum = 0;
+    state.stats.evCount = 0;
+    [1, 0.3866481375534103, 0, 1, 1, -0.7428011174682247].forEach(countScore);
+    return { sum: state.stats.evSum, n: state.stats.evCount,
+             avg: Math.round(state.stats.evSum / state.stats.evCount) };
   });
   console.log('\nthe session average');
-  ok('six decisions average to the 44% the site showed', session === 44, String(session));
+  ok('every decision is counted', session.n === 6, String(session.n));
+  ok('six decisions average to the 44% the site showed',
+    session.avg === 44, `${session.sum}/${session.n} = ${session.avg}`);
+
+  // The popup is where both numbers are read, so the wiring is checked here
+  // rather than left to be noticed on a phone.
+  const popup = await page.evaluate(() => {
+    const txt = (id) => document.getElementById(id).textContent;
+    const shown = (id) => document.getElementById(id).style.display !== 'none';
+    const out = {};
+    renderDecisionScore(0.5622120024, 0.34, 'var(--ok)', 'bb');
+    out.score = txt('popup-score');
+    out.loss = txt('popup-ev');
+    out.scoreShown = shown('popup-score');
+    renderDecisionScore(-0.7428011174682247, 2.4289, 'var(--never)', 'bb');
+    out.negative = txt('popup-score');
+    renderDecisionScore(1, null, 'var(--best)', 'bb');
+    out.lossRowHidden = !shown('popup-ev-row');
+    renderDecisionScore(null, null, 'var(--best)', 'bb');
+    out.noScoreHidden = !shown('popup-score');
+
+    Object.assign(state.stats, { best: 3, ok: 1, rare: 1, never: 1 });
+    out.opened = showSessionPopup();
+    out.session = txt('session-score');
+    out.counts = txt('session-count');
+    out.only = ['tier-view', 'grid-view', 'session-view']
+      .filter((v) => document.getElementById(v).style.display !== 'none');
+    out.overlay = document.getElementById('overlay').classList.contains('show');
+    document.getElementById('overlay').classList.remove('show');
+
+    state.stats.evCount = 0;
+    out.silent = showSessionPopup();
+    return out;
+  });
+
+  console.log('\nthe popup');
+  ok('the score is the headline', popup.score === '56%' && popup.scoreShown, popup.score);
+  ok('EV loss drops to a supporting row', popup.loss === '0.34bb', popup.loss);
+  ok('a losing decision keeps its sign', popup.negative === '-74%', popup.negative);
+  ok('no EV loss means no EV row', popup.lossRowHidden);
+  ok('an unpriceable decision shows no score at all', popup.noScoreHidden);
+  ok('the hand end reports the session', popup.opened && popup.session === '44%', popup.session);
+  ok('with what it is an average of', /6回の判定/.test(popup.counts), popup.counts);
+  ok('and it is the only view open',
+    popup.only.length === 1 && popup.only[0] === 'session-view' && popup.overlay,
+    popup.only.join(','));
+  ok('nothing scored yet raises no popup', popup.silent === false);
 
   ok('nothing threw along the way', errors.length === 0, errors.join(' | '));
 

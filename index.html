@@ -424,6 +424,18 @@
   #st-counts { display: flex; gap: 13px; align-items: center; }
   #st-counts .st-item { display: inline-flex; align-items: center; gap: 3px; }
   #st-counts .st-item b { color: var(--text); }
+  /* The score is the thing being reported, so it is read before the pictogram
+     rather than after the two rows underneath it. Tabular figures keep it from
+     shifting width as it counts between hands. */
+  #popup .score-big {
+    font-size: 46px; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  #popup .score-cap {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--muted); margin-bottom: 10px;
+  }
+  #popup .tier-rows { margin-top: 10px; text-align: left; }
   #popup .tier-title { font-size: 17px; font-weight: 800; margin-bottom: 10px; }
   #popup .detail-row { font-size: 13px; margin: 3px 0; color: var(--muted); }
   #popup .detail-row b { color: var(--text); }
@@ -920,14 +932,27 @@
 <div id="overlay">
   <div id="popup">
     <div id="tier-view">
+      <div class="score-big" id="popup-score">-</div>
+      <div class="score-cap" id="popup-score-cap">GTOスコア</div>
       <div class="tier-icon" id="popup-icon"></div>
       <div class="tier-title" id="popup-title">最頻アクションです！</div>
       <div class="detail-row">あなたの選択: <b id="popup-chosen">-</b></div>
       <div class="detail-row">最頻アクション: <b id="popup-best">-</b></div>
-      <div class="detail-row" id="popup-ev-row">GTOスコア: <b id="popup-ev">-</b></div>
+      <div class="detail-row" id="popup-ev-row">EVロス: <b id="popup-ev">-</b></div>
       <div class="popup-btn-row">
         <button id="popup-info" class="secondary"><svg class="btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="2.4"/><path d="M9 3.4 V20.6 M15 3.4 V20.6 M3.4 9 H20.6 M3.4 15 H20.6"/></svg>レンジ表</button>
         <button id="popup-ok">続ける</button>
+      </div>
+    </div>
+    <div id="session-view" style="display:none;">
+      <div class="score-big" id="session-score">-</div>
+      <div class="score-cap">セッションスコア</div>
+      <div class="tier-title" id="session-title">ハンド終了</div>
+      <div class="detail-row" id="session-count">-</div>
+      <div class="tier-rows" id="session-tiers"></div>
+      <div class="popup-btn-row">
+        <button id="session-close" class="secondary">閉じる</button>
+        <button id="session-next">次のハンドへ ▶</button>
       </div>
     </div>
     <div id="grid-view" style="display:none;">
@@ -2418,14 +2443,66 @@ function countScore(score) {
    would read as "this cost you nothing". The colour is the tier's own, because
    the score and the tier are now two readings of one rule. */
 function renderDecisionScore(score, loss, color, unit) {
+  const big = document.getElementById('popup-score');
+  const cap = document.getElementById('popup-score-cap');
+  big.style.display = cap.style.display = score === null ? 'none' : '';
+  if (score !== null) {
+    big.textContent = Math.round(score * 100) + '%';
+    big.style.color = color;
+  }
+  // EV loss is now a supporting detail rather than the headline, and it is only
+  // ever the reason behind a negative score - inside the strategy the score is
+  // a share of the top action and this number had nothing to do with it.
   const row = document.getElementById('popup-ev-row');
   const el = document.getElementById('popup-ev');
-  if (score === null) { row.style.display = 'none'; return; }
+  if (loss === null || loss === undefined) { row.style.display = 'none'; return; }
   row.style.display = '';
-  el.textContent = Math.round(score * 100) + '%' +
-    (loss === null || loss === undefined ? ''
-      : `　(EVロス ${loss < 0.005 ? '0' : loss.toFixed(2)}${unit})`);
-  el.style.color = color;
+  el.textContent = (loss < 0.005 ? '0' : loss.toFixed(2)) + unit;
+}
+
+const POPUP_VIEWS = ['tier-view', 'grid-view', 'session-view'];
+
+/* One view at a time in the one popup. Each caller used to hide the others by
+   hand, which was two lines to keep in step and is now three. */
+function showPopupView(id) {
+  POPUP_VIEWS.forEach((v) => {
+    document.getElementById(v).style.display = v === id ? 'block' : 'none';
+  });
+  document.getElementById('overlay').classList.add('show');
+}
+
+/* A mean of tier scores has no tier of its own, so the bands are set to read
+   the way the tiers do: all but perfect, sound, still positive, and giving up
+   EV on balance. */
+function sessionScoreColor(pct) {
+  return pct >= 90 ? 'var(--best)' : pct >= 50 ? 'var(--ok)'
+    : pct >= 0 ? 'var(--rare)' : 'var(--never)';
+}
+
+/* Where the session stands, shown when the hand stops being playable - a fold,
+   a showdown, or a street with nothing collected past it. The same average the
+   drawer counter carries; this only puts it in front of the player. Returns
+   false before the first scored decision of the session, when there is nothing
+   to average yet. */
+function showSessionPopup() {
+  const s = state.stats;
+  if (!s.evCount) return false;
+  const pct = Math.round(s.evSum / s.evCount);
+  const big = document.getElementById('session-score');
+  big.textContent = pct + '%';
+  big.style.color = sessionScoreColor(pct);
+  const total = s.best + s.ok + s.rare + s.never;
+  document.getElementById('session-count').textContent =
+    `${total}回の判定 ／ 最頻一致 ${total ? Math.round((s.best / total) * 100) : 0}%`;
+  document.getElementById('session-tiers').innerHTML = TIER_ORDER.map((k) =>
+    `<div class="tier-row"><span style="color:${TIER_META[k].color};line-height:0">` +
+    tierSvg(TIER_META[k].kind, 'tier-mini') + '</span>' +
+    `<span class="tr-name">${TIER_NAME[k]}</span>` +
+    `<span class="tr-n">${s[k]}</span>` +
+    `<span class="tr-pct">${total ? Math.round((s[k] / total) * 100) + '%' : '-'}</span>` +
+    '</div>').join('');
+  showPopupView('session-view');
+  return true;
 }
 /* One pictogram family: same 56x56 frame, same 19px disc, same stroke weight,
    drawn in currentColor so each tier just sets a colour. Solid disc = the
@@ -2487,9 +2564,7 @@ function onHeroAction(chosenAction, allActions, myHandId) {
   countScore(score);
   updateStatsUI();
   recordDecision(state.spot.category, tier, score, loss);
-  document.getElementById('tier-view').style.display = 'block';
-  document.getElementById('grid-view').style.display = 'none';
-  document.getElementById('overlay').classList.add('show');
+  showPopupView('tier-view');
   document.getElementById('action-buttons').style.display = 'none';
   document.getElementById('action-buttons').innerHTML = '';
 
@@ -2543,10 +2618,8 @@ function showVillainRange(pos) {
     classBoard: classNode && state.pf ? state.pf.board : null,
   });
   state.gridStandalone = true;
-  document.getElementById('tier-view').style.display = 'none';
-  document.getElementById('grid-view').style.display = 'block';
   document.getElementById('grid-back').textContent = '閉じる';
-  document.getElementById('overlay').classList.add('show');
+  showPopupView('grid-view');
 }
 
 document.getElementById('popup-info').onclick = () => {
@@ -2571,17 +2644,24 @@ document.getElementById('popup-info').onclick = () => {
   });
   state.gridStandalone = false;
   document.getElementById('grid-back').textContent = '戻る';
-  document.getElementById('tier-view').style.display = 'none';
-  document.getElementById('grid-view').style.display = 'block';
+  showPopupView('grid-view');
 };
 document.getElementById('grid-back').onclick = () => {
-  document.getElementById('grid-view').style.display = 'none';
   if (state.gridStandalone) {
     state.gridStandalone = false;
+    document.getElementById('grid-view').style.display = 'none';
     document.getElementById('overlay').classList.remove('show');
   } else {
-    document.getElementById('tier-view').style.display = 'block';
+    showPopupView('tier-view');
   }
+};
+
+document.getElementById('session-close').onclick = () => {
+  document.getElementById('overlay').classList.remove('show');
+};
+document.getElementById('session-next').onclick = () => {
+  document.getElementById('overlay').classList.remove('show');
+  startNewHand();
 };
 
 function renderStatCounters() {
@@ -2674,6 +2754,14 @@ async function endHand(myHandId) {
     note.style.display = 'none';
   }
   document.getElementById('hand-end').style.display = 'flex';
+
+  // Held back long enough for the cards that were just turned over to be seen,
+  // since the popup covers them. A player who starts the next hand inside that
+  // window has moved on, so the score for the hand they left is not thrown in
+  // front of the one they are now playing.
+  await delay(state.fastForward ? 260 : 760);
+  if (myHandId !== state.handId) return;
+  showSessionPopup();
 }
 
 document.getElementById('popup-ok').onclick = async () => {
@@ -3936,9 +4024,7 @@ function pfOnHeroAction(node, tuples, actionIdx, myHandId) {
   updateStatsUI();
   recordDecision(state.spot.category, tier, score, loss);
 
-  document.getElementById('tier-view').style.display = 'block';
-  document.getElementById('grid-view').style.display = 'none';
-  document.getElementById('overlay').classList.add('show');
+  showPopupView('tier-view');
   document.getElementById('action-buttons').style.display = 'none';
   document.getElementById('action-buttons').innerHTML = '';
 
