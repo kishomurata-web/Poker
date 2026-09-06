@@ -210,16 +210,34 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript',
     out.noScoreHidden = !shown('popup-score');
 
     Object.assign(state.stats, { best: 3, ok: 1, rare: 1, never: 1 });
-    out.opened = showSessionPopup();
-    out.session = txt('session-score');
+
+    /* A session sitting at 44% and a hand that just went badly. The popup has
+       to report the hand - the session average is what stops moving, and
+       "how did that one go" is the only question being asked here. */
+    state.handScores = [0, -74, 0, 100, 0, 0];
+    HAND_SCORES.length = 0;
+    for (let i = 0; i < 25; i++) HAND_SCORES.push(i < 5 ? 100 : 40);
+    out.opened = showSessionPopup(Math.round(mean(state.handScores)));
+    out.hand = txt('session-score');
     out.counts = txt('session-count');
+    out.sessionAvg = Math.round(state.stats.evSum / state.stats.evCount);
     out.only = ['tier-view', 'grid-view', 'session-view']
       .filter((v) => document.getElementById(v).style.display !== 'none');
     out.overlay = document.getElementById('overlay').classList.contains('show');
     document.getElementById('overlay').classList.remove('show');
 
-    state.stats.evCount = 0;
-    out.silent = showSessionPopup();
+    out.recent = recentHandsAverage();
+    updateStatsUI();
+    out.corner = document.getElementById('tb-recent').textContent;
+
+    // banking a hand keeps only the last of many, and never an empty one
+    state.handScores = [80, 60];
+    out.banked = recordHandScore();
+    out.afterBank = recentHandsAverage();
+    state.handScores = [];
+    out.emptyBank = recordHandScore();
+
+    out.silent = showSessionPopup(null);
     return out;
   });
 
@@ -229,12 +247,26 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript',
   ok('a losing decision keeps its sign', popup.negative === '-74%', popup.negative);
   ok('no EV loss means no EV row', popup.lossRowHidden);
   ok('an unpriceable decision shows no score at all', popup.noScoreHidden);
-  ok('the hand end reports the session', popup.opened && popup.session === '44%', popup.session);
-  ok('with what it is an average of', /6回の判定/.test(popup.counts), popup.counts);
+  ok('the hand end reports the hand, not the session',
+    popup.opened && popup.hand === '4%', `${popup.hand} (session was ${popup.sessionAvg}%)`);
+  ok('and says how many decisions that is over',
+    /6回の判定/.test(popup.counts), popup.counts);
   ok('and it is the only view open',
     popup.only.length === 1 && popup.only[0] === 'session-view' && popup.overlay,
     popup.only.join(','));
-  ok('nothing scored yet raises no popup', popup.silent === false);
+  ok('a hand the hero never acted in raises no popup', popup.silent === false);
+
+  console.log('\nand the corner keeps the last twenty hands');
+  ok('twenty-five hands average only the last twenty', popup.recent === 40,
+    String(popup.recent));
+  ok('the popup carries it too', /直近20ハンド 40%/.test(popup.counts), popup.counts);
+  ok('and so does the corner', /直近20\s*40%/.test(popup.corner), popup.corner);
+  ok('a banked hand is its own average', popup.banked === 70, String(popup.banked));
+  // 19 of the 40s plus the new 70, which is 41.5 and prints as 42.
+  ok('and it displaces the oldest of the twenty', popup.afterBank === 42,
+    String(popup.afterBank));
+  ok('a hand with no decisions banks nothing', popup.emptyBank === null,
+    String(popup.emptyBank));
 
   /* The pot pill holds the street's opening pot so a bet can be read against
      it, and the score divides by the pot including that bet. Two readings of

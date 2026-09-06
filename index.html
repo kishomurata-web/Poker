@@ -93,7 +93,16 @@
   #topbar-stats {
     font-size: 12px; font-weight: 800; color: var(--accent);
     font-variant-numeric: tabular-nums; flex-shrink: 0;
+    display: flex; align-items: baseline; gap: 8px;
   }
+  #topbar-stats span:empty { display: none; }
+  /* The corner readout: how the last twenty hands went, which is the number
+     that moves while a session's own average stops moving. */
+  #tb-recent {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    padding: 1px 6px; border-radius: 999px; background: #14364a;
+  }
+  #tb-recent b { font-weight: 800; margin-left: 3px; }
 
   #drawer-backdrop {
     position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 14;
@@ -819,7 +828,7 @@
   <header id="topbar">
     <button id="menu-btn" aria-label="メニューを開く"><span></span><span></span><span></span></button>
     <div id="topbar-title">トレーニング</div>
-    <div id="topbar-stats"><span id="tb-acc">-</span></div>
+    <div id="topbar-stats"><span id="tb-acc"></span><span id="tb-recent"></span></div>
   </header>
 
   <div id="train-screen" style="display:flex; flex-direction:column; flex:1; min-height:0;">
@@ -972,7 +981,7 @@
     </div>
     <div id="session-view" style="display:none;">
       <div class="score-big" id="session-score">-</div>
-      <div class="score-cap">セッションスコア</div>
+      <div class="score-cap">このハンドの平均</div>
       <div class="tier-title" id="session-title">ハンド終了</div>
       <div class="detail-row" id="session-count">-</div>
       <div class="tier-rows" id="session-tiers"></div>
@@ -1063,7 +1072,7 @@ let state = {
   heroPos: null, hands: {},
   /* Per-seat display state, kept outside the DOM so that rebuilding the seats
      (orientation change, felt resize, …) never loses what already happened. */
-  seatInfo: {}, actingPos: null, bets: {}, geom: null, actorPaths: {}, timeline: [], endedByMissingData: false, endedOffRange: false, handOver: false,
+  seatInfo: {}, actingPos: null, bets: {}, geom: null, actorPaths: {}, timeline: [], handScores: [], endedByMissingData: false, endedOffRange: false, handOver: false,
   path: [], stats: { best: 0, ok: 0, rare: 0, never: 0, evSum: 0, evCount: 0 },
   handId: 0,
   pendingAction: null, pendingPos: null, pendingHandId: null,
@@ -2519,13 +2528,52 @@ function gtoScoreFor(tier, chosenFreq, maxFreq, loss, pot) {
   return Math.max(-1, -20 * loss / pot);
 }
 
-/* The running session average behind the counter in the drawer. Kept in whole
-   percent so it matches what the popup printed, rather than drifting from it. */
+/* Every score the hero has been given, in whole percent so the averages match
+   what the popup printed rather than drifting from it: the session total behind
+   the drawer counter, and this hand's own scores, which the hand-end popup
+   reports and which become one entry in the last-twenty. */
 function countScore(score) {
   if (score === null) return;
-  state.stats.evSum += Math.round(score * 100);
+  const pct = Math.round(score * 100);
+  state.stats.evSum += pct;
   state.stats.evCount += 1;
+  state.handScores.push(pct);
 }
+
+const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+
+/* One number per hand, kept apart from the per-decision log because a hand is
+   not a number of decisions: a hand where the hero folded preflop and one that
+   went to the river both count once here, which is what "the last twenty hands"
+   means. Capped, and stored on its own so a reload does not empty the corner. */
+const HAND_SCORES_KEY = 'gtoPreflopTrainer.hands.v1';
+const HAND_SCORES_CAP = 200;
+const RECENT_HANDS = 20;
+let HAND_SCORES = [];
+
+function loadHandScores() {
+  try {
+    const raw = localStorage.getItem(HAND_SCORES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    HAND_SCORES = Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'number') : [];
+  } catch (e) { HAND_SCORES = []; }
+}
+
+function recordHandScore() {
+  const avg = mean(state.handScores);
+  if (avg === null) return null;               // the hero never got to act
+  HAND_SCORES.push(Math.round(avg));
+  if (HAND_SCORES.length > HAND_SCORES_CAP) {
+    HAND_SCORES.splice(0, HAND_SCORES.length - HAND_SCORES_CAP);
+  }
+  try { localStorage.setItem(HAND_SCORES_KEY, JSON.stringify(HAND_SCORES)); } catch (e) { /* private mode */ }
+  return Math.round(avg);
+}
+
+const recentHandsAverage = () => {
+  const a = HAND_SCORES.slice(-RECENT_HANDS);
+  return a.length ? Math.round(mean(a)) : null;
+};
 
 /* The popup's score line. A null score means the spot has no EV table to price
    the mistake against, and the row goes away rather than printing a 0 that
@@ -2568,21 +2616,35 @@ function sessionScoreColor(pct) {
     : pct >= 0 ? 'var(--rare)' : 'var(--never)';
 }
 
-/* Where the session stands, shown when the hand stops being playable - a fold,
-   a showdown, or a street with nothing collected past it. The same average the
-   drawer counter carries; this only puts it in front of the player. Returns
-   false before the first scored decision of the session, when there is nothing
-   to average yet. */
-function showSessionPopup() {
-  const s = state.stats;
-  if (!s.evCount) return false;
-  const pct = Math.round(s.evSum / s.evCount);
+/* How the hand just played went, shown when it stops being playable - a fold, a
+   showdown, or a street with nothing collected past it.
+
+   The hand's own average, not the session's. A session average stops moving
+   after a few dozen hands, so the number a player would be reading between
+   hands is one that cannot answer "how did that go" - which is the only
+   question being asked at that moment. The session is still a tap away in the
+   drawer, and the twenty-hand average under the headline is the one that
+   answers "and how am I going", which is a different question with a different
+   number.
+
+   Returns false when the hero never got to act, which is a hand with nothing to
+   report rather than a hand worth a zero. */
+function showSessionPopup(handPct) {
+  if (handPct === null || handPct === undefined) return false;
   const big = document.getElementById('session-score');
-  big.textContent = pct + '%';
-  big.style.color = sessionScoreColor(pct);
-  const total = s.best + s.ok + s.rare + s.never;
+  big.textContent = handPct + '%';
+  big.style.color = sessionScoreColor(handPct);
+
+  const n = state.handScores.length;
+  const recent = recentHandsAverage();
   document.getElementById('session-count').textContent =
-    `${total}回の判定 ／ 最頻一致 ${total ? Math.round((s.best / total) * 100) : 0}%`;
+    `このハンドの${n}回の判定の平均` +
+    (recent === null ? '' : ` ／ 直近${Math.min(HAND_SCORES.length, RECENT_HANDS)}ハンド ${recent}%`);
+
+  // The tiers stay session-wide: four counts out of one hand's handful of
+  // decisions is a bar with one segment in it, which says less than nothing.
+  const s = state.stats;
+  const total = s.best + s.ok + s.rare + s.never;
   document.getElementById('session-tiers').innerHTML = TIER_ORDER.map((k) =>
     `<div class="tier-row"><span style="color:${TIER_META[k].color};line-height:0">` +
     tierSvg(TIER_META[k].kind, 'tier-mini') + '</span>' +
@@ -2775,7 +2837,12 @@ function updateStatsUI() {
   document.getElementById('st-acc').textContent = acc;
   document.getElementById('st-ev').textContent =
     s.evCount ? Math.round(s.evSum / s.evCount) + '%' : '-';
-  document.getElementById('topbar-stats').textContent = total ? `正答率 ${acc}` : '';
+  document.getElementById('tb-acc').textContent = total ? `正答率 ${acc}` : '';
+  const recent = recentHandsAverage();
+  const rec = document.getElementById('tb-recent');
+  rec.innerHTML = recent === null ? ''
+    : `直近${Math.min(HAND_SCORES.length, RECENT_HANDS)}<b>${recent}%</b>`;
+  if (recent !== null) rec.style.color = sessionScoreColor(recent);
 }
 
 function logAction(pos, act) { recordHistory('preflop', pos, act); }
@@ -2824,7 +2891,12 @@ async function step(myHandId) {
 async function endHand(myHandId) {
   if (myHandId !== state.handId) return;
   updateSeatActing(null);
+  // Some lines reach the end twice - the same hand must not be counted twice in
+  // the last twenty, so the hand's score is banked on the first arrival only.
+  const alreadyOver = state.handOver;
   state.handOver = true;
+  const handPct = alreadyOver ? mean(state.handScores) : recordHandScore();
+  updateStatsUI();
   // The pill was holding the street's opening pot so the bets on the felt could
   // be read against it. Nothing is being sized any more, so it goes back to the
   // whole pot - which needs a redraw, since no chips moved to trigger one.
@@ -2854,7 +2926,7 @@ async function endHand(myHandId) {
   // front of the one they are now playing.
   await delay(state.fastForward ? 260 : 760);
   if (myHandId !== state.handId) return;
-  showSessionPopup();
+  showSessionPopup(handPct === null ? null : Math.round(handPct));
 }
 
 document.getElementById('popup-ok').onclick = async () => {
@@ -2933,6 +3005,7 @@ async function startNewHand() {
   state.actingPos = null;
   state.actorPaths = {};
   state.timeline = [];
+  state.handScores = [];
   state.heroActed = false;
   state.endedByMissingData = false;
   state.endedOffRange = false;
@@ -3976,6 +4049,7 @@ async function startPostflopHand() {
   state.actingPos = null;
   state.actorPaths = {};
   state.timeline = [];
+  state.handScores = [];
   state.heroActed = false;
   state.endedByMissingData = false;
   state.endedOffRange = false;
@@ -5675,6 +5749,7 @@ async function main() {
   // preflop-only version did.
   await pfLoadIndex();
   loadStats();
+  loadHandScores();
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
