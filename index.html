@@ -152,33 +152,63 @@
   #spot-caption .spot-name { font-size: 12px; font-weight: 800; color: #cfe6f0; }
   #spot-caption .spot-sub { font-size: 11px; color: var(--muted); }
 
-  /* Who did what, by position. The tags on the seats say the same thing but
-     scattered around an oval, so reading the order off them means hunting;
-     this is one row per street with the positions in acting order. */
-  #act-history {
-    flex-shrink: 0; margin: 4px 6px 0; display: grid; gap: 1px;
+  /* Who did what, in the order it happened. The tags on the seats say the same
+     thing but scattered around an oval, so reading the order off them means
+     hunting.
+
+     One line, scrolled sideways, rather than a grid of streets by positions:
+     the grid had a column for every seat at the table, so eight of nine columns
+     were empty dots by the flop, and it grew a row per street. This shows only
+     what was actually done, which is also why a player who folded preflop
+     simply stops appearing.
+
+     The height is fixed and never changes inside a hand. The strip sits above
+     the felt in the same column, so anything that resizes it resizes the table
+     under it, and layoutSeats then rebuilds every seat at new coordinates -
+     from the table that reads as the whole screen twitching. */
+  .act-strip {
+    flex-shrink: 0; display: flex; align-items: center; gap: 5px;
+    height: 30px; box-sizing: border-box; padding: 0 6px; margin: 4px 0 0;
+    overflow-x: auto; overflow-y: hidden; white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    scrollbar-width: none; -ms-overflow-style: none;
+    overscroll-behavior-x: contain;
   }
-  #act-history:empty { display: none; }
-  #act-history .ah-cell {
-    text-align: center; padding: 1px 0; border-radius: 3px; font-size: 9px;
-    line-height: 1.35; white-space: nowrap; overflow: hidden;
+  .act-strip::-webkit-scrollbar { display: none; }
+  .act-strip:empty { display: none; }
+  .act-strip .as-cell {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 5px 3px 7px; border-radius: 6px; font-size: 11px; line-height: 1.2;
+    background: #14364a; border: 1px solid transparent; color: var(--text);
   }
-  #act-history .ah-street {
-    font-size: 8px; color: var(--muted); font-weight: 700; text-align: right;
-    padding-right: 4px; align-self: center; letter-spacing: 0.02em;
+  .act-strip button.as-cell { cursor: pointer; font-family: inherit; }
+  .act-strip .as-cell.hero .as-pos { color: var(--accent); }
+  .act-strip .as-cell.current { border-color: var(--accent); background: #16455c; }
+  .act-strip .as-pos { font-weight: 800; color: var(--label); letter-spacing: 0.02em; }
+  .act-strip .as-stack { font-size: 10px; color: var(--muted); }
+  .act-strip .as-act {
+    font-weight: 800; padding: 2px 6px; border-radius: 4px;
+    background: #0d2637; color: var(--text);
   }
-  #act-history .ah-pos { color: var(--label); font-weight: 800; font-size: 8.5px; }
-  #act-history .ah-pos.hero { color: var(--accent); }
-  /* the hero's column, tinted the whole height so it is findable at a glance */
-  #act-history .ah-cell.herocol { background: rgba(242, 193, 78, 0.10); }
-  #act-history .ah-act { font-weight: 800; color: var(--text); }
-  #act-history .ah-act.fold { color: #6d8f9f; font-weight: 600; }
-  #act-history .ah-act.check { color: #57c4c4; }
-  #act-history .ah-act.call { color: #4fc07d; }
-  #act-history .ah-act.raise { color: #ef7f6f; }
-  #act-history .ah-act.allin { color: #c08ae0; }
-  #act-history .ah-act.none { color: #2c4e5e; }
+  .act-strip .as-act.fold { color: #8fa9b6; font-weight: 700; }
+  .act-strip .as-act.check { color: #57c4c4; }
+  .act-strip .as-act.call { color: #4fc07d; }
+  .act-strip .as-act.raise { color: #ef7f6f; }
+  .act-strip .as-act.allin { color: #c08ae0; }
+  .act-strip .as-act.ask { color: var(--accent); }
+  /* A street opens with the pot it opens with - the number every bet after it
+     is a fraction of - and the cards that arrived with it. */
+  .act-strip .as-street {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+    padding: 0 4px 0 2px; font-size: 10px; font-weight: 800;
+    color: var(--muted); letter-spacing: 0.04em;
+  }
+  .act-strip .as-street .as-pot { font-size: 9px; font-weight: 700; color: var(--label); }
+  .act-strip .as-street .card {
+    width: 15px; height: 21px; border-radius: 2.5px; font-size: 9px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .act-strip .as-street .card .pip { display: none; }
   /* only the pot sits on the felt, exactly like the reference table */
   #center-info {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -744,16 +774,12 @@
   #spot-table tbody tr.active { background: #1d5c78; }
   #spot-table tbody tr:active { background: #205f7d; }
 
+  /* Study's copy of the strip sits in a panel of its own rather than over the
+     felt, so it keeps the panel's frame and gives itself a little more room. */
   .path-bar {
-    display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
-    background: var(--panel-bg); border: 1px solid var(--line); border-radius: 9px; padding: 7px 8px;
+    height: 38px; background: var(--panel-bg);
+    border: 1px solid var(--line); border-radius: 9px; padding: 0 7px; margin: 0;
   }
-  .path-bar .crumb {
-    font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
-    background: #1a4b61; color: #cfe6f0; border: none; cursor: pointer;
-  }
-  .path-bar .crumb.current { background: var(--accent); color: var(--accent-ink); }
-  .path-bar .sep { color: var(--muted); font-size: 11px; }
   .acting-line {
     display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
     font-size: 13px; color: var(--muted);
@@ -800,7 +826,7 @@
     <div id="spot-caption">
       <span class="spot-name" id="spot-name">-</span>
     </div>
-    <div id="act-history"></div>
+    <div class="act-strip" id="act-history"></div>
     <div id="table-wrap">
       <div id="felt"></div>
       <div id="center-info">
@@ -856,7 +882,7 @@
         <div id="spot-menu" role="listbox"><table id="spot-table"></table></div>
       </div>
     </div>
-    <div class="path-bar" id="study-path"></div>
+    <div class="act-strip path-bar" id="study-path"></div>
     <div class="board-row" id="study-board" style="justify-content:flex-start;"></div>
     <div class="acting-line">
       <span>アクションするプレイヤー</span><b id="study-acting">-</b>
@@ -1037,7 +1063,7 @@ let state = {
   heroPos: null, hands: {},
   /* Per-seat display state, kept outside the DOM so that rebuilding the seats
      (orientation change, felt resize, …) never loses what already happened. */
-  seatInfo: {}, actingPos: null, bets: {}, geom: null, actorPaths: {}, history: {}, endedByMissingData: false, endedOffRange: false, handOver: false,
+  seatInfo: {}, actingPos: null, bets: {}, geom: null, actorPaths: {}, timeline: [], endedByMissingData: false, endedOffRange: false, handOver: false,
   path: [], stats: { best: 0, ok: 0, rare: 0, never: 0, evSum: 0, evCount: 0 },
   handId: 0,
   pendingAction: null, pendingPos: null, pendingHandId: null,
@@ -1962,75 +1988,102 @@ function renderCategoryButtons() {
 /* One short token per action, so eight positions fit across a phone. Sizes are
    kept on bets and raises because "R" alone loses the only thing that
    distinguishes a min-raise from a shove-sized one. */
-function shortAction(act) {
+/* "Raise 2.3", not "R2.3". The strip is a line of chips with room for the word;
+   the seat tags on the felt are where the abbreviations earn their keep. */
+const bbText = (v) => String(Math.round(parseFloat(v) * 100) / 100);
+
+function longAction(act) {
   const [code, type, betsize, allin] = act;
-  if (allin) return { t: 'AI', kind: 'allin' };
-  if (type === 'FOLD') return { t: 'F', kind: 'fold' };
-  if (type === 'CHECK') return { t: 'X', kind: 'check' };
-  if (type === 'CALL') return { t: 'C', kind: 'call' };
-  const n = String(betsize).replace(/\.?0+$/, '');
-  return { t: aggressionWord(act)[0] + n, kind: 'raise' };
+  if (allin) return { t: 'All in', kind: 'allin' };
+  if (type === 'FOLD') return { t: 'Fold', kind: 'fold' };
+  if (type === 'CHECK') return { t: 'Check', kind: 'check' };
+  if (type === 'CALL') return { t: 'Call', kind: 'call' };
+  return { t: (aggressionWord(act) === 'BET' ? 'Bet ' : 'Raise ') + bbText(betsize),
+           kind: 'raise' };
 }
 
-const HIST_STREETS = [
-  { key: 'preflop', label: 'PF' },
-  { key: 'flop', label: 'FLOP' },
-  { key: 'turn', label: 'TURN' },
-];
+/* What the player still had when they made the choice, which is the number the
+   choice was made against. Read before the chips move, so every caller has to
+   record the action before putChipsIn - they all do. */
+function stackBefore(pos) {
+  return Math.round(Math.max(0, (startingStack(pos) || 0) - totalIn(pos)) * 10) / 10;
+}
 
 function recordHistory(street, pos, act) {
-  const h = state.history[street] || (state.history[street] = {});
-  (h[pos] = h[pos] || []).push(shortAction(act));
+  state.timeline.push(Object.assign({ pos, stack: stackBefore(pos) }, longAction(act)));
   renderHistory();
+}
+
+/* A street's marker goes in as the street opens, so the pot printed beside it is
+   the one every bet that follows is a fraction of. */
+function markStreet(label, cards) {
+  state.timeline.push({ street: label, pot: Math.round(potDisplay() * 10) / 10,
+                        cards: (cards || []).slice() });
+  renderHistory();
+}
+
+/* Paints strip entries into `el`. An entry is either a street marker
+   ({street, pot, cards}) or something a player did ({pos, stack, t, kind}); one
+   carrying `onPick` becomes a button, which is how study mode walks back. */
+function renderActionStrip(el, entries) {
+  if (!el) return;
+  el.innerHTML = '';
+  entries.forEach((e) => {
+    if (e.street) {
+      const d = document.createElement(e.onPick ? 'button' : 'div');
+      d.className = 'as-street';
+      const name = document.createElement('span');
+      name.textContent = e.street;
+      d.appendChild(name);
+      if (e.pot != null) {
+        const p = document.createElement('span');
+        p.className = 'as-pot';
+        p.textContent = e.pot;
+        d.appendChild(p);
+      }
+      (e.cards || []).forEach((cs) =>
+        d.appendChild(cardEl({ rank: cs[0], suit: cs[1] }, false, false)));
+      if (e.onPick) d.onclick = e.onPick;
+      el.appendChild(d);
+      return;
+    }
+    const cell = document.createElement(e.onPick ? 'button' : 'div');
+    cell.className = 'as-cell' + (e.hero ? ' hero' : '') + (e.current ? ' current' : '');
+    const pos = document.createElement('span');
+    pos.className = 'as-pos';
+    pos.textContent = e.pos;
+    cell.appendChild(pos);
+    if (e.stack != null) {
+      const st = document.createElement('span');
+      st.className = 'as-stack';
+      st.textContent = e.stack;
+      cell.appendChild(st);
+    }
+    const act = document.createElement('span');
+    act.className = 'as-act ' + (e.kind || '');
+    act.textContent = e.t;
+    cell.appendChild(act);
+    if (e.onPick) cell.onclick = e.onPick;
+    el.appendChild(cell);
+  });
+  // The live end is the part worth seeing; what came before is scrolled back to.
+  el.scrollLeft = el.scrollWidth;
 }
 
 function renderHistory() {
   const el = document.getElementById('act-history');
   if (!el) return;
-  el.innerHTML = '';
-  if (!state.spot) return;
-  const positions = state.spot.positions;
-  el.style.gridTemplateColumns = `30px repeat(${positions.length}, 1fr)`;
-
-  const add = (cls, text, extra) => {
-    const d = document.createElement('div');
-    d.className = 'ah-cell ' + cls + (extra ? ' ' + extra : '');
-    d.textContent = text;
-    el.appendChild(d);
-    return d;
-  };
-
-  add('ah-street', '');
-  positions.forEach((p) => {
-    add('ah-pos', p, p === state.heroPos ? 'hero herocol' : '');
-  });
-
-  // Every street the hand can still reach gets its row now, empty or not.
-  //
-  // Rows used to appear as they were played, and this strip sits above the
-  // felt in the same column - so the turn card arriving grew the strip by one
-  // row, which pushed the table down and shrank it, and layoutSeats rebuilt
-  // every seat at new coordinates. From the table it read as the whole screen
-  // twitching each time the action passed to the other player. The felt must
-  // not be able to resize inside a hand, so the strip is sized for the hand's
-  // deepest possible street from its first draw.
-  //
-  // Only ChipEV has postflop data, so an ICM hand reserves the preflop row
-  // alone rather than carrying two rows it can never fill.
-  const canGoPostflop = state.spot.category === 'chipev';
-  for (const st of HIST_STREETS) {
-    const row = state.history[st.key];
-    if (!row && !canGoPostflop) continue;
-    add('ah-street', st.label);
-    positions.forEach((p) => {
-      const acts = row && row[p];
-      const cell = add('ah-act', acts ? acts.map((a) => a.t).join('·') : '·',
-        (p === state.heroPos ? 'herocol ' : '') + (acts ? acts[acts.length - 1].kind : 'none'));
-      // A cell can hold two actions (check then check-raise); keep it readable
-      // rather than let it push the column wider than its share.
-      if (acts && acts.length > 1) cell.style.fontSize = '8px';
-    });
+  if (!state.spot) { el.innerHTML = ''; return; }
+  const entries = state.timeline.map((e) =>
+    (e.street ? e : Object.assign({ hero: e.pos === state.heroPos }, e)));
+  // Whoever is being asked closes the line, so the strip ends on the decision in
+  // front of the player rather than on the last thing somebody did.
+  if (!state.handOver && state.actingPos) {
+    entries.push({ pos: state.actingPos, stack: stackBefore(state.actingPos),
+                   t: 'アクションをする', kind: 'ask', current: true,
+                   hero: state.actingPos === state.heroPos });
   }
+  renderActionStrip(el, entries);
 }
 
 /* ================= training: table rendering ================= */
@@ -2387,6 +2440,7 @@ function applySeatInfo(pos) {
 
 function updateSeatActing(pos) {
   state.actingPos = pos;
+  renderHistory();
   document.querySelectorAll('.seat').forEach((s) => s.classList.remove('acting'));
   const el = document.getElementById('seat-' + pos);
   if (el) el.classList.add('acting');
@@ -2878,7 +2932,7 @@ async function startNewHand() {
   state.seatInfo = {};
   state.actingPos = null;
   state.actorPaths = {};
-  state.history = {};
+  state.timeline = [];
   state.heroActed = false;
   state.endedByMissingData = false;
   state.endedOffRange = false;
@@ -3838,6 +3892,7 @@ async function pfEnter(pair, data, flop, used, myHandId) {
     trail: [],
   };
   state.phase = 'postflop';
+  markStreet('FLOP', state.pf.board);
   pfRenderBoard(3);
   await delay(state.fastForward ? 80 : 520);
   if (myHandId !== state.handId) return;
@@ -3920,7 +3975,7 @@ async function startPostflopHand() {
   state.seatInfo = {};
   state.actingPos = null;
   state.actorPaths = {};
-  state.history = {};
+  state.timeline = [];
   state.heroActed = false;
   state.endedByMissingData = false;
   state.endedOffRange = false;
@@ -3981,8 +4036,9 @@ async function startPostflopHand() {
   return true;
 }
 
+const pfSidePos = (pair, side) => (side === 'oop' ? pair.oop : pair.ip);
 function pfPosForSide(side) {
-  return side === 'oop' ? state.pf.pair.oop : state.pf.pair.ip;
+  return pfSidePos(state.pf.pair, side);
 }
 
 async function pfStep(myHandId) {
@@ -4120,6 +4176,7 @@ async function pfApply(node, tuples, actionIdx, myHandId) {
     state.pf.board.push(card);
     state.pf.nodeKey = line + '|turn_OOP|' + card;
     closeStreet();
+    markStreet('TURN', [card]);
     renderTableOverlays();
     pfRenderBoard(1);
     await delay(state.fastForward ? 80 : 520);
@@ -4267,31 +4324,33 @@ function renderStudy() {
   const key = state.studyPath.join('-');
   const node = spot.nodes[key];
 
-  // breadcrumb
+  // The same strip the training screen carries, with every chip a way back to
+  // the node it was played at.
   const pathEl = document.getElementById('study-path');
-  pathEl.innerHTML = '';
-  const addCrumb = (text, depth) => {
-    const b = document.createElement('button');
-    b.className = 'crumb' + (depth === state.studyPath.length && !state.studyPf ? ' current' : '');
-    b.textContent = text;
-    b.onclick = () => {
-      state.studyPf = null;
-      state.studyPath = state.studyPath.slice(0, depth);
-      renderStudy();
-    };
-    pathEl.appendChild(b);
-  };
-  addCrumb('開始', 0);
-  state.studyPath.forEach((code, i) => {
-    const sep = document.createElement('span');
-    sep.className = 'sep';
-    sep.textContent = '›';
-    pathEl.appendChild(sep);
-    addCrumb(code, i + 1);
-  });
+  const entries = [{ street: 'PREFLOP', onPick: () => {
+    state.studyPf = null;
+    state.studyPath = [];
+    renderStudy();
+  } }];
+  for (let i = 0; i < state.studyPath.length; i++) {
+    const at = spot.nodes[state.studyPath.slice(0, i).join('-')];
+    if (!at) break;
+    const played = at[1].find((a) => a[0] === state.studyPath[i]);
+    if (!played) break;
+    const depth = i + 1;
+    entries.push(Object.assign({ pos: at[0], hero: false }, longAction(played), {
+      onPick: () => {
+        state.studyPf = null;
+        state.studyPath = state.studyPath.slice(0, depth);
+        renderStudy();
+      },
+    }));
+  }
 
   document.getElementById('study-board').innerHTML = '';
-  if (state.studyPf) { renderStudyPostflop(pathEl); return; }
+  if (state.studyPf) { renderStudyPostflop(pathEl, entries); return; }
+  if (node) entries.push({ pos: node[0], t: 'アクションをする', kind: 'ask', current: true });
+  renderActionStrip(pathEl, entries);
 
   if (!node) {
     document.getElementById('study-acting').textContent = '—';
@@ -4424,38 +4483,46 @@ function buildCardPicker(usedCards, labelText, onPick) {
 /* The postflop half of study mode. Walks the same collected tree the training
    mode walks, so "データなし" here means exactly what it means there: the line
    exists in poker but was not collected. */
-async function renderStudyPostflop(pathEl) {
+async function renderStudyPostflop(pathEl, entries) {
   const pf = state.studyPf;
   const node = pf.data.nodes[pf.nodeKey];
   const boardEl = document.getElementById('study-board');
   boardEl.innerHTML = '';
   pf.board.forEach((cs) => boardEl.appendChild(cardEl({ rank: cs[0], suit: cs[1] }, false, false)));
 
-  // Extend the breadcrumb with the postflop trail.
+  // Extend the strip with the postflop trail. A street marker goes in wherever
+  // the board grew, which is the only record of when the card arrived - the
+  // trail itself just holds actions.
+  let marked = 0;
+  const mark = (board, pot) => {
+    if (!board || board.length <= marked) return;
+    entries.push({ street: marked === 0 ? 'FLOP' : 'TURN',
+                   pot: pot == null ? null : Math.round(pot * 10) / 10,
+                   cards: board.slice(marked === 0 ? 0 : marked) });
+    marked = board.length;
+  };
   pf.trail.forEach((step, i) => {
-    const sep = document.createElement('span');
-    sep.className = 'sep';
-    sep.textContent = '›';
-    pathEl.appendChild(sep);
-    const b = document.createElement('button');
-    b.className = 'crumb';
-    b.textContent = step.label;
-    b.onclick = () => {
-      pf.nodeKey = step.from;
-      pf.board = step.board.slice();
-      pf.trail = pf.trail.slice(0, i);
-      renderStudy();
-    };
-    pathEl.appendChild(b);
+    const at = pf.data.nodes[step.from];
+    mark(step.board, at && at.pot);
+    if (!at) return;
+    const tuples = pfActionTuples(at, pf.pair);
+    const idx = at.actions.findIndex((a) => a.code === step.label);
+    entries.push(Object.assign(
+      { pos: pfSidePos(pf.pair, at.side) },
+      idx >= 0 ? longAction(tuples[idx]) : { t: step.label, kind: 'raise' },
+      {
+        onPick: () => {
+          pf.nodeKey = step.from;
+          pf.board = step.board.slice();
+          pf.trail = pf.trail.slice(0, i);
+          renderStudy();
+        },
+      }));
   });
-  const cur = document.createElement('span');
-  cur.className = 'sep';
-  cur.textContent = '›';
-  pathEl.appendChild(cur);
-  const here = document.createElement('button');
-  here.className = 'crumb current';
-  here.textContent = pfNodeName(pf.nodeKey.split('|')[1]);
-  pathEl.appendChild(here);
+  mark(pf.board, node && node.pot);
+  entries.push({ pos: node ? pfSidePos(pf.pair, node.side) : '—',
+                 t: 'アクションをする', kind: 'ask', current: true });
+  renderActionStrip(pathEl, entries);
 
   if (!node) {
     document.getElementById('study-acting').textContent = '—';
