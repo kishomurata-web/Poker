@@ -92,7 +92,13 @@ def frequencies(rec):
     return out, total / 10000.0
 
 
-def rows_for_file(path, problems=None):
+def wanted(value, allowed):
+    """An empty filter keeps everything, which is what makes the filters safe to
+    leave off when the whole cache is what is wanted."""
+    return not allowed or value in allowed
+
+
+def rows_for_file(path, problems=None, lines=None, nodes=None):
     """One (pair, board, line, node) group is one file, holding one record per
     card - a single "-" on the flop, and up to 48 turn cards otherwise.
 
@@ -104,6 +110,8 @@ def rows_for_file(path, problems=None):
     if len(parts) != 4:
         return
     pair, board, line, node = parts
+    if not wanted(line, lines) or not wanted(node, nodes):
+        return
     seen = set()
     with open(path, encoding="utf-8") as fh:
         for n, raw in enumerate(fh, 1):
@@ -136,10 +144,14 @@ def rows_for_file(path, problems=None):
                 yield row
 
 
-def export(cache, out):
+def export(cache, out, lines=None, nodes=None):
     files = sorted(glob.glob(os.path.join(cache, "*.jsonl")))
     if not files:
         sys.exit("no .jsonl files in %s" % cache)
+    if lines:
+        print("lines: %s" % ", ".join(sorted(lines)))
+    if nodes:
+        print("nodes: %s" % ", ".join(sorted(nodes)))
     opener = gzip.open if out.endswith(".gz") else open
     n_rows = 0
     boards = set()
@@ -147,7 +159,7 @@ def export(cache, out):
     with opener(out, "wt", encoding="utf-8", newline="\n") as fh:
         fh.write("pair,line,node,board,card,pot,combos,code,frac,freq\n")
         for i, path in enumerate(files):
-            for row in rows_for_file(path, problems):
+            for row in rows_for_file(path, problems, lines, nodes):
                 fh.write(",".join(row) + "\n")
                 n_rows += 1
                 boards.add(row[3])
@@ -237,27 +249,43 @@ def selftest():
           [r[9] for r in trows], ["0.300000", "0.700000", "0.900000", "0.100000"])
     check("the turn line is read from the filename", trows[0][1], "XC33")
 
+    check("a line filter keeps what it names",
+          len(list(rows_for_file(turn, None, {"XC33"}, None))), 4)
+    check("and drops what it does not",
+          len(list(rows_for_file(turn, None, {"XX"}, None))), 0)
+    check("a node filter does the same",
+          len(list(rows_for_file(turn, None, None, {"turn_IP"}))), 0)
+    check("an empty filter keeps everything",
+          len(list(rows_for_file(turn, None, set(), set()))), 4)
+
     # An all-in carries no size in the cache, so it must not be given one.
     check("an all-in has no pot fraction", action_frac("RAI", "6.100"), None)
     check("a pot written as a string still divides",
           action_frac("R2", "6.100"), 0.3279)
     check("and a missing pot does not raise", action_frac("R2", None), None)
 
-    print("\n=== %d passed, %d failed ===" % (16 - len(failures), len(failures)))
+    print("\n=== %d passed, %d failed ===" % (20 - len(failures), len(failures)))
     return 1 if failures else 0
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", help="the flop sweep's cache folder")
-    ap.add_argument("--out", default="flop_freqs.csv.gz")
+    ap.add_argument("--out", default="freqs.csv.gz")
+    ap.add_argument("--lines", default="",
+                    help="comma-separated flop lines to keep, e.g. XX,XC33,B33C. "
+                         "Default: every line in the cache.")
+    ap.add_argument("--nodes", default="",
+                    help="comma-separated nodes to keep, e.g. turn_OOP,turn_IP. "
+                         "Default: every node.")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
     if args.selftest:
         sys.exit(selftest())
     if not args.cache:
         sys.exit("--cache is required (or --selftest)")
-    export(args.cache, args.out)
+    split = lambda v: {x.strip() for x in v.split(",") if x.strip()}
+    export(args.cache, args.out, split(args.lines), split(args.nodes))
 
 
 if __name__ == "__main__":
