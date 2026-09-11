@@ -4,7 +4,7 @@ Conditions are carried as structured constraints rather than as sentences, so
 two cuts on the same quantity collapse into one interval and a rule reads as a
 person would write it. A split that does not change the printed line is undone.
 """
-import gto, collections
+import gto, collections, round10
 RV = gto.RV
 RANKS = 'AKQJT98765432'
 
@@ -141,10 +141,14 @@ def label(path):
         words = [w for w in words if w not in ('モノトーン以外', 'レインボー以外')] + ['2トーン']
     return '　'.join(words) if words else '全ボード'
 
-def fmt(leaves, scale=1.0):
+def fmt(leaves, scale=1.0, step10=True):
+    """step10 rounds every printed line to multiples of ten, chosen against the
+    boards in the class rather than by rounding the average one entry at a
+    time - which would not keep the line adding to 100."""
     out = []
     for rs, path in leaves:
         tw, m = stats(rs)
-        out.append((tw, label(path), vec5(m), round(tw * scale)))
+        v = round10.round_leaf(rs) if step10 else vec5(m)
+        out.append((tw, label(path), v, round(tw * scale)))
     out.sort(reverse=True, key=lambda x: x[0])
     return out

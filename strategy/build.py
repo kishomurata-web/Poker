@@ -15,7 +15,7 @@ often does not separate them in another.
 """
 import argparse, collections, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import gto, preds, turnpred, tree, turntree
+import gto, preds, turnpred, tree, turntree, round10
 
 SEAT = {'UTG_vs_BB': ('utg', 'bb'), 'UTG_vs_SB': ('utg', 'sb'), 'UTG_vs_BTN': ('btn', 'utg'),
         'BTN_vs_BB': ('btn', 'bb'), 'BTN_vs_SB': ('btn', 'sb'), 'SB_vs_BB': ('bb', 'sb')}
@@ -40,13 +40,18 @@ def turnname(pair, line, node):
 
 def error(leaves):
     """How far one board sits from the line it is filed under, in points:
-    over the whole mix, and over the bet-or-not decision alone."""
+    over the whole mix, and over the bet-or-not decision alone.
+
+    Measured against the line as printed - rounded to tens - so the figure in
+    the appendix is the error a reader of the table actually carries, not the
+    error before rounding."""
     num = bet = den = 0.0
     for rs, _ in leaves:
-        _, m = tree.stats(rs)
+        v = [x / 100.0 for x in round10.round_leaf(rs)]
         for f, d in rs:
-            num += f.w * sum(abs(d.get(t, 0.0) - m[t]) for t in gto.TIERS) / 2
-            bet += f.w * abs((1 - d.get('X', 0.0)) - (1 - m['X']))
+            b = round10.line5({t: d.get(t, 0.0) for t in gto.TIERS})
+            num += f.w * sum(abs(x - y) for x, y in zip(v, b)) / 2
+            bet += f.w * abs((1 - b[0]) - (1 - v[0]))
             den += f.w
     return num / den * 100, bet / den * 100
 
@@ -136,7 +141,7 @@ def main(a):
     L += ["=========================  付録：精度  =========================", "",
           "各ルールの数字は、そのクラスに入る全ボードを出現確率で重み付けした平均。",
           "「誤差」は、1ボードの真の戦略とそのクラスの数字との差（重み付き平均、%ポイント）。",
-          "「ベット誤差」はベットするか否かの判断だけに絞った差。", "",
+          "「ベット誤差」はベットするか否かの判断だけに絞った差。いずれも10刻みに丸めた後の値。", "",
           f"{'スポット':30s} {'ルール数':>7s} {'誤差':>7s} {'ベット誤差':>9s}"]
     for name in FORDER:
         rules, _, (e, be) = fq[name]
@@ -145,7 +150,7 @@ def main(a):
         rules, _, (e, be) = tq[nm]
         L.append(f"{nm:30s} {len(rules):7d} {e:6.1f}pt {be:8.1f}pt")
     L += ["", "誤差の大半はサイズの配分であって、打つか打たないかの判断ではない。",
-          "フロップ12スポットの平均でベット誤差は約5pt、サイズ込みで約9pt。",
+          "フロップ12スポットの平均でベット誤差は約6pt、サイズ込みで約10pt。",
           "これは1755ボードを10クラス前後に畳んだことの代償で、クラスを増やせば下がるが、",
           "同じ10クラスなら他の切り方でこれ以上は下がらない水準まで詰めてある。"]
 

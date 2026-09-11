@@ -1,4 +1,4 @@
-import gto, tree, collections
+import gto, tree, collections, round10
 RV = gto.RV
 RANKS = 'AKQJT98765432'
 
@@ -103,10 +103,11 @@ def grow(rows, max_leaves=6, min_w=80, max_depth=3, min_split=4):
                 leaves.append(m); changed=True; break
     return leaves
 
-def fmt(leaves):
+def fmt(leaves, step10=True):
     out=[]
     for rs,path in leaves:
         tw,m=tree.stats(rs)
-        out.append((tw,label(path),tree.vec5(m),round(tw)))
+        v=round10.round_leaf(rs) if step10 else tree.vec5(m)
+        out.append((tw,label(path),v,round(tw)))
     out.sort(reverse=True,key=lambda x:x[0])
     return out
