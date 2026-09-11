@@ -50,7 +50,7 @@ def by_bucket(rec, board):
                          % (len(strat), len(reach), n * COMBOS, COMBOS))
     table = HB.table(board)
     pot = rec.get("pot")
-    slot = [tier_of(a[0], pot) for a in actions]
+    slot = [tier_of(a, pot) for a in actions]
     nb = len(HB.BUCKETS)
     got = [0.0] * nb
     mix = [[0.0] * 5 for _ in range(nb)]
@@ -136,7 +136,10 @@ def selftest():
     strat = [0] * (2 * COMBOS)
     for c in top[:4]: strat[COMBOS + c] = 10000
     for c in air[:6]: strat[c] = 10000
-    rec = {"actions": [["X", "CHECK", "0.000"], ["R2", "RAISE", "2.000"]],
+    # The cache writes actions as bare code strings - "X", "R2", "RAI" - which
+    # is what export_freqs.py reads. An earlier version of this test used a
+    # richer shape and so never exercised the code that reads them.
+    rec = {"actions": ["X", "R2"],
            "pot": "6.100", "strategy": enc(strat), "reach": enc(reach)}
     res = {b: (combos, share, mix) for b, combos, share, mix in by_bucket(rec, board)}
     check("a bucket the player holds is sized in combos", res["トップペア"][0], 4.0)
@@ -157,7 +160,28 @@ def selftest():
     check("an overbet lands in 125%~", tier_of("R9", "6.100"), 4)
     check("an all-in lands in 125%~", tier_of("RAI", "6.100"), 4)
     check("a check is a check", tier_of("X", "6.100"), 0)
-    print("\n=== %d passed, %d failed ===" % (14 - len(fails), len(fails)))
+
+    # End to end, through a real file on disk, because every failure so far has
+    # been in the reading rather than in the sums.
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "UTG_vs_BB__AsKh7d__FLOP__flop_IP.jsonl")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+        problems = []
+        rows = list(rows_for_file(p, problems, set(), set()))
+        check("a cache file reads without complaint", problems, [])
+        check("and yields one row per bucket", len(rows), len(HB.BUCKETS))
+        check("the spot is read off the filename",
+              rows[0][:5], ["UTG_vs_BB", "FLOP", "flop_IP", "AsKh7d", "-"])
+        top = next(r for r in rows if r[5] == "トップペア")
+        check("top pair's row carries its mix", top[8:], [0.0, 1.0, 0.0, 0.0, 0.0])
+        air = next(r for r in rows if r[5] == "ノーペア")
+        check("and air's row carries its own", air[8:], [1.0, 0.0, 0.0, 0.0, 0.0])
+        empty = next(r for r in rows if r[5] == "フルハウス")
+        check("a bucket never held writes blanks", empty[8:], ["", "", "", "", ""])
+
+    print("\n=== %d passed, %d failed ===" % (20 - len(fails), len(fails)))
     return 1 if fails else 0
 
 def main():
