@@ -73,7 +73,7 @@ def by_bucket(rec, board):
             out.append((HB.BUCKETS[b], 0.0, 0.0, None))
     return out
 
-def rows_for_file(path, problems, lines, nodes):
+def rows_for_file(path, problems, lines, nodes, keep_empty=False):
     name = os.path.basename(path)[: -len(".jsonl")]
     parts = name.split("__")
     if len(parts) != 4: return
@@ -89,6 +89,7 @@ def rows_for_file(path, problems, lines, nodes):
                 card = rec.get("card") or "-"
                 cards = flop + ([card] if card != "-" else [])
                 for bucket, combos, share, mix in by_bucket(rec, cards):
+                    if mix is None and not keep_empty: continue
                     yield [pair, line, node, board, card, bucket,
                            round(combos, 1), round(share, 4)] + \
                           (["", "", "", "", ""] if mix is None
@@ -96,7 +97,7 @@ def rows_for_file(path, problems, lines, nodes):
             except Exception as exc:                      # noqa: BLE001
                 problems.append("%s line %d: %s" % (os.path.basename(path), n, exc))
 
-def export(cache, out, lines, nodes):
+def export(cache, out, lines, nodes, keep_empty=False):
     files = sorted(glob.glob(os.path.join(cache, "*.jsonl")))
     if not files: sys.exit("no .jsonl files under %s" % cache)
     problems, written = [], 0
@@ -105,7 +106,7 @@ def export(cache, out, lines, nodes):
         w.writerow(["pair", "line", "node", "board", "card", "bucket",
                     "combos", "share"] + TIERS)
         for i, p in enumerate(files, 1):
-            for row in rows_for_file(p, problems, lines, nodes):
+            for row in rows_for_file(p, problems, lines, nodes, keep_empty):
                 w.writerow(row); written += 1
             if i % 500 == 0:
                 print("  %d/%d files, %d rows" % (i, len(files), written), flush=True)
@@ -169,9 +170,12 @@ def selftest():
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(json.dumps(rec) + "\n")
         problems = []
-        rows = list(rows_for_file(p, problems, set(), set()))
+        rows = list(rows_for_file(p, problems, set(), set(), keep_empty=True))
         check("a cache file reads without complaint", problems, [])
         check("and yields one row per bucket", len(rows), len(HB.BUCKETS))
+        held = list(rows_for_file(p, [], set(), set()))
+        check("a bucket nobody holds is left out by default",
+              len(held), sum(1 for r in rows if r[8] != ""))
         check("the spot is read off the filename",
               rows[0][:5], ["UTG_vs_BB", "FLOP", "flop_IP", "AsKh7d", "-"])
         top = next(r for r in rows if r[5] == "トップペア")
@@ -181,7 +185,7 @@ def selftest():
         empty = next(r for r in rows if r[5] == "フルハウス")
         check("a bucket never held writes blanks", empty[8:], ["", "", "", "", ""])
 
-    print("\n=== %d passed, %d failed ===" % (20 - len(fails), len(fails)))
+    print("\n=== %d passed, %d failed ===" % (21 - len(fails), len(fails)))
     return 1 if fails else 0
 
 def main():
@@ -190,12 +194,14 @@ def main():
     ap.add_argument("--out", default="hands40.csv.gz")
     ap.add_argument("--lines", default="")
     ap.add_argument("--nodes", default="")
+    ap.add_argument("--all-buckets", action="store_true",
+                    help="also write the buckets the range never holds here")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest: sys.exit(selftest())
     if not a.cache: sys.exit("--cache is required (or --selftest)")
     sp = lambda v: {x.strip() for x in v.split(",") if x.strip()}
-    export(a.cache, a.out, sp(a.lines), sp(a.nodes))
+    export(a.cache, a.out, sp(a.lines), sp(a.nodes), a.all_buckets)
 
 if __name__ == "__main__":
     main()

@@ -7,6 +7,7 @@ W = preds.WINDOWS
 class Turn:
     def __init__(self, board, card, weight=1.0):
         self.w = weight
+        self.board, self.card = board, card
         f = [(board[i], board[i+1]) for i in range(0, 6, 2)]
         self.fr = sorted((RV[r] for r, _ in f), reverse=True)
         self.fs = [s for _, s in f]

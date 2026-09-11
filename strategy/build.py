@@ -64,8 +64,12 @@ def shapes(leaves, key, H, t, min_share=0.10):
     """
     out = {}
     for rs, path in leaves:
-        per = [(f.w, f.board, H[(key[0], key[1], key[2], f.board)])
-               for f, _ in rs if (key[0], key[1], key[2], f.board) in H]
+        per = []
+        for f, _ in rs:
+            k = (key[0], key[1], key[2], f.board, getattr(f, 'card', '-'))
+            if k in H:
+                nm = f.board if k[4] == '-' else f"{f.board}+{k[4]}"
+                per.append((f.w, nm, H[k]))
         if not per: continue
         bd = pattern.bands(pattern.merge([(w, c) for w, _, c in per]))
         if bd is None: continue
@@ -109,7 +113,7 @@ HEAD = """40BB SRP 簡易GTO戦略 v2（1755フロップ全数版）
 ターン：49フロップ×49ターンカード=2,401通りのうち何通りか（現行版と同じ）。
 
 ■ ハンドランクとベット頻度
-フロップの各ルールには、そのクラスのベットの形を付記している。レンジをメイド強度順に
+各ルールには、そのクラスのベットの形を付記している。レンジをメイド強度順に
 並べ、上から5% / 5-15% / 15-40% / 40-100% の4区間それぞれのベット率が [ナッツ/強/中/弱]。
 
   レンジベット  どの強さでも同じくらい打つ。ハンドランクがサイズを決めない。
@@ -153,8 +157,9 @@ def main(a):
         tspots[key[:3]].append((turnpred.Turn(key[3], key[4]), d))
 
     L = HEAD.split('\n')
-    H = pattern.load(a.hands) if a.hands else {}
     t = pattern.THRESHOLDS[a.pattern]
+    H = pattern.load(a.hands) if a.hands else {}
+    TH = pattern.load(a.turn_hands) if a.turn_hands else {}
     fq = {}
     for key, rows in fspots.items():
         lv = tree.grow(rows, max_leaves=a.flop_rules, min_w=150, max_depth=3)
@@ -181,12 +186,17 @@ def main(a):
                 lv = turntree.grow(tspots[k], max_leaves=a.turn_rules, min_w=80, max_depth=3)
                 nm = turnname(*k)
                 TORDER.append(nm)
-                tq[nm] = (turntree.fmt(lv), tree.stats(tspots[k])[1], error(lv))
+                tq[nm] = (turntree.fmt(lv), tree.stats(tspots[k])[1], error(lv),
+                          shapes(lv, k, TH, t) if TH else {})
     for nm in TORDER:
-        rules, m, _ = tq[nm]
+        rules, m, _, sh = tq[nm]
         L.append(f"{nm}    ベット率 {(1 - m['X']) * 100:.0f}%")
         for _, rule, v, n in rules:
-            L.append(f"{rule}（{v[0]}, {v[1]}, {v[2]}, {v[3]}, {v[4]}）  [{n}]")
+            pat, bd, ex = sh.get(rule, ('', '', []))
+            tail = f"  {pat} [{bd}]" if pat else ""
+            L.append(f"{rule}（{v[0]}, {v[1]}, {v[2]}, {v[3]}, {v[4]}）  [{n}]{tail}")
+            for p2, w, bs in ex:
+                L.append(f"    例外 {p2} [{round(w)}]  {', '.join(bs)} など")
         L.append("")
 
     L += ["=========================  付録：精度  =========================", "",
@@ -198,7 +208,7 @@ def main(a):
         rules, _, (e, be), _ = fq[name]
         L.append(f"{name:30s} {len(rules):7d} {e:6.1f}pt {be:8.1f}pt")
     for nm in TORDER:
-        rules, _, (e, be) = tq[nm]
+        rules, _, (e, be), _ = tq[nm]
         L.append(f"{nm:30s} {len(rules):7d} {e:6.1f}pt {be:8.1f}pt")
     fe = [fq[n][2] for n in FORDER]
     L += ["", "誤差の大半はサイズの配分であって、打つか打たないかの判断ではない。",
@@ -222,11 +232,14 @@ if __name__ == '__main__':
     p.add_argument('--out', default='40BB_SRP_v2.txt')
     p.add_argument('--hands', default='hands40.csv.gz',
                    help="export_hands.py's output; without it the shape column is left off")
+    p.add_argument('--turn-hands', default='turnhands40.csv.gz',
+                   help='export_hands.py run over the turn cache')
     p.add_argument('--pattern', default='B', choices=sorted(pattern.THRESHOLDS),
                    help='how hard a board has to lean before it is called a shape: '
                         'A loose, B middling, C strict')
     p.add_argument('--flop-rules', type=int, default=10)
     p.add_argument('--turn-rules', type=int, default=6)
     args = p.parse_args()
-    if args.hands and not os.path.exists(args.hands): args.hands = None
+    for f in ('hands', 'turn_hands'):
+        if getattr(args, f) and not os.path.exists(getattr(args, f)): setattr(args, f, None)
     main(args)

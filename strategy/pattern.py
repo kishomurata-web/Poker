@@ -25,7 +25,11 @@ THRESHOLDS = {
 }
 
 def load(path):
-    """(pair, line, node, board) -> {bucket: (combos, betfreq)}.
+    """(pair, line, node, board, card) -> {bucket: (combos, betfreq)}.
+
+    The card belongs in the key even though it is always "-" on the flop: on
+    the turn one board carries 49 of them, and leaving it out silently keeps
+    only the last.
 
     Only the combo count and the chance of betting survive; the split between
     sizes is already in the table's five columns.
@@ -36,7 +40,7 @@ def load(path):
             if r['check'] == '': continue
             c = float(r['combos'])
             if c <= 0: continue
-            out[(r['pair'], r['line'], r['node'], r['board'])][r['bucket']] = \
+            out[(r['pair'], r['line'], r['node'], r['board'], r['card'])][r['bucket']] = \
                 (c, 1.0 - float(r['check']))
     return out
 
