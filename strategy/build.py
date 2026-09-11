@@ -112,6 +112,21 @@ def play_table(leaves, key, H, label, weight, scale=1.0):
     return out
 
 
+def rule_block(rule, v, n, shape, play, play_label='打つなら'):
+    """The lines one rule occupies: its frequencies, its shape, and how to play it."""
+    pat, bd, ex = shape
+    tail = f"  {pat} [{bd}]" if pat else ""
+    out = [f"{rule}（{v[0]}, {v[1]}, {v[2]}, {v[3]}, {v[4]}）  [{n}]{tail}"]
+    for p2, w, bs in ex:
+        out.append(f"    例外 {p2} [{round(w)}]  {', '.join(bs)} など")
+    if play:
+        # The label sits on its own line: it is Japanese, so padding the first
+        # entry across from it would misalign against every entry below.
+        out.append(f"    {play_label}")
+        out += ['  ' + l for l in group_lines(play)]
+    return out
+
+
 def group_lines(gs):
     """One line per action, with how much of the range it covers."""
     tot = sum(x[2] for x in gs)
@@ -136,6 +151,26 @@ def hands_by_decision(path):
         out[(r['pair'], r['line'], r['node'], r['board'], r['card'])].append(
             (r['bucket'], (c, 1 - mix[0]), mix))
     return out
+
+
+MERGED_HEAD = """40BB SRP 簡易GTO戦略 v2 統合版
+
+■ 1つのルールに2種類の情報が載っている
+
+    ペアなし　T以上が1枚以上　hi-mid差 4以下（10, 40, 30, 20, 0）  [9600]  レンジベット [93/96/90/88]
+        打つなら  ~33%   ← それ以外    (レンジの90%)
+                  75%    ← オーバーペア, ナッツFD    (レンジの6%)
+
+カッコの5つ組はレンジ全体がどう動くかで、混ぜることが前提。「打つなら」以下は、
+自分の手で何を打つかを1つに決めたもので、混ぜない。
+
+アプリの採点は1ハンドの選択を、そのハンドにとっての最頻アクションと比べて付く
+（index.html の tierFor / gtoScoreFor）。混ぜるほど点は下がるので、点を取りにいくなら
+「打つなら」の行だけを見ればよい。レンジがどう組まれているかを知りたいときに5つ組を見る。
+
+期待スコアは全40スポットの平均で93.8%。混ぜた場合は81.6%（フロップ）/71.6%（ターン）。
+
+"""
 
 
 PLAY_HEAD = """40BB SRP 実戦用アクション表（スコア最大化版）
@@ -251,11 +286,7 @@ def main(a):
         rules, m, _, sh = fq[name]
         L.append(f"{name}    ベット率 {(1 - m['X']) * 100:.0f}%")
         for _, rule, v, n in rules:
-            pat, bd, ex = sh.get(rule, ('', '', []))
-            tail = f"  {pat} [{bd}]" if pat else ""
-            L.append(f"{rule}（{v[0]}, {v[1]}, {v[2]}, {v[3]}, {v[4]}）  [{n}]{tail}")
-            for p2, w, bs in ex:
-                L.append(f"    例外 {p2} [{round(w)}]  {', '.join(bs)} など")
+            L += rule_block(rule, v, n, sh.get(rule, ('', '', [])), None)
         L.append("")
 
     L += TURNHEAD.split('\n')
@@ -275,11 +306,7 @@ def main(a):
         rules, m, _, sh = tq[nm]
         L.append(f"{nm}    ベット率 {(1 - m['X']) * 100:.0f}%")
         for _, rule, v, n in rules:
-            pat, bd, ex = sh.get(rule, ('', '', []))
-            tail = f"  {pat} [{bd}]" if pat else ""
-            L.append(f"{rule}（{v[0]}, {v[1]}, {v[2]}, {v[3]}, {v[4]}）  [{n}]{tail}")
-            for p2, w, bs in ex:
-                L.append(f"    例外 {p2} [{round(w)}]  {', '.join(bs)} など")
+            L += rule_block(rule, v, n, sh.get(rule, ('', '', [])), None)
         L.append("")
 
     L += ["=========================  付録：精度  =========================", "",
@@ -340,6 +367,36 @@ def main(a):
         P += ["", f"全{len(sc)}スポットの単純平均 {tot * 100:.1f}%"]
         open(a.play_out, "w").write("\n".join(P) + "\n")
         print(f"{a.play_out}: {len(P)} lines")
+
+        if a.merged_out:
+            play = {}
+            for name in FORDER:
+                key, lv = FLOPKEY[name]
+                for _, rule, _, gs in play_table(lv, key, HF, tree.label, lambda w, c: w * c):
+                    play[(name, rule)] = gs
+            for nm in TORDER:
+                key, lv = TURNKEY[nm]
+                for _, rule, _, gs in play_table(lv, key, HT, turntree.label, lambda w, c: c):
+                    play[(nm, rule)] = gs
+            M = MERGED_HEAD.split("\n") + HEAD.split("\n")[1:]
+            for name in FORDER:
+                rules, m, _, sh = fq[name]
+                M.append(f"{name}    ベット率 {(1 - m['X']) * 100:.0f}%")
+                for _, rule, v, n in rules:
+                    M += rule_block(rule, v, n, sh.get(rule, ('', '', [])),
+                                    play.get((name, rule))) + [""]
+            M += TURNHEAD.split("\n")
+            for nm in TORDER:
+                rules, m, _, sh = tq[nm]
+                M.append(f"{nm}    ベット率 {(1 - m['X']) * 100:.0f}%")
+                for _, rule, v, n in rules:
+                    M += rule_block(rule, v, n, sh.get(rule, ('', '', [])),
+                                    play.get((nm, rule))) + [""]
+            M += L[L.index("=========================  付録：精度  ========================="):]
+            M += ["", "=========================  付録：期待スコア  =========================", ""]
+            M += P[P.index("この表の通りに打った場合にアプリが付ける点の見込み。17区分の集計を真値として"):]
+            open(a.merged_out, "w").write("\n".join(M) + "\n")
+            print(f"{a.merged_out}: {len(M)} lines")
     print(f"{a.out}: {len(L)} lines, {len(FORDER)} flop spots, {len(TORDER)} turn spots")
     for name in FORDER:
         assert sum(x[3] for x in fq[name][0]) == 22100, name
@@ -359,6 +416,8 @@ if __name__ == '__main__':
     p.add_argument('--pattern', default='B', choices=sorted(pattern.THRESHOLDS),
                    help='how hard a board has to lean before it is called a shape: '
                         'A loose, B middling, C strict')
+    p.add_argument('--merged-out', default='40BB_SRP_all.txt',
+                   help='both documents woven into one')
     p.add_argument('--play-out', default='40BB_SRP_play.txt',
                    help='where to write the score-maximising action table')
     p.add_argument('--flop-rules', type=int, default=10)
