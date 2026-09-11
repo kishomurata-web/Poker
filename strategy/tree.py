@@ -111,19 +111,27 @@ def grow(rows, max_leaves=10, min_w=150, max_depth=3, min_gain=1e-4, min_split=4
                 leaves.append(merged); changed = True; break
     return leaves
 
+# "the high card is not paired" is true of an unpaired board as well as of one
+# paired below the high card, so it only reads as "a lower card is paired" once
+# the rule has already said the board is paired.
+UNPAIRED_SAFE = {'pairhi': 'ハイカードがペアでない'}
+
 def label(path):
+    known_paired = any(fam == 'pair' and pos for fam, pos, _ in path)
     bools, nums = [], collections.defaultdict(lambda: [None, None])
     for fam, pos, v in path:
         if fam in BOOL:
-            bools.append(BOOL[fam][0 if pos else 1])
+            w = BOOL[fam][0 if pos else 1]
+            if not pos and fam in UNPAIRED_SAFE and not known_paired:
+                w = UNPAIRED_SAFE[fam]
+            bools.append((fam, w))
         else:
             b = nums[fam]
             if pos: b[0] = v if b[0] is None else max(b[0], v)
             else:   b[1] = v - 1 if b[1] is None else min(b[1], v - 1)
     ORD = ['pair','pairhi','mono','rain','hmsd','mlsd','hmml','str','wheel','wmade','run3']
-    bools.sort(key=lambda w: min((i for i, k in enumerate(ORD)
-               for lab in BOOL[k] if lab == w), default=99))
-    words = list(bools)
+    bools.sort(key=lambda fw: ORD.index(fw[0]) if fw[0] in ORD else 99)
+    words = [w for _, w in bools]
     for fam, (lo, hi) in nums.items():
         pre, r, suf = NUM[fam]
         if fam in ('hi', 'mid', 'lo'):
