@@ -55,7 +55,7 @@ def error(leaves):
             den += f.w
     return num / den * 100, bet / den * 100
 
-def shapes(leaves, key, H, t, min_share=0.10):
+def shapes(leaves, key, H, t, label, min_share=0.10, min_cover=0.70):
     """For each rule: the shape its boards share, and the boards that break it.
 
     The rule's own shape is read off its boards merged, which is the same
@@ -70,7 +70,11 @@ def shapes(leaves, key, H, t, min_share=0.10):
             if k in H:
                 nm = f.board if k[4] == '-' else f"{f.board}+{k[4]}"
                 per.append((f.w, nm, H[k]))
-        if not per: continue
+        # A rule whose boards are mostly absent from the export would still
+        # produce a confident-looking label off whatever is left, so it gets
+        # none at all.
+        if sum(w for w, _, _ in per) < min_cover * sum(f.w for f, _ in rs):
+            continue
         bd = pattern.bands(pattern.merge([(w, c) for w, _, c in per]))
         if bd is None: continue
         pat = pattern.classify(bd, t)
@@ -87,7 +91,7 @@ def shapes(leaves, key, H, t, min_share=0.10):
             if w / tw < min_share: continue
             bs.sort(reverse=True)
             ex.append((p2, w, [b for _, b in bs[:5]]))
-        out[tree.label(path)] = (pat, pattern.describe(bd), ex)
+        out[label(path)] = (pat, pattern.describe(bd), ex)
     return out
 
 
@@ -121,7 +125,11 @@ HEAD = """40BB SRP 簡易GTO戦略 v2（1755フロップ全数版）
   ポラー        強い側と弱い側が打ち、中途半端な強さがチェックする。
   標準          強いほど打つ。
 
-クラス内でこの形が食い違うボードは、そのルールの下に「例外」として並べてある。
+クラス内でこの形が食い違うボードは、そのルールの下に「例外」として並べてある。クラスの形は
+そのクラス全体を混ぜて読むので、ポラーのように一部のボードだけがU字を描く形は平均に埋もれる。
+ボード単位ではポラーはフロップの5.6%、ターンの5.4%にあたり、いずれもIPがチェックを受けて
+打つノードに偏っている。クラスのラベルではなく例外欄の方に現れることが多い。
+形を読むだけのデータが揃わないクラスには、ラベルを付けていない。
 4区間の切り方も、形を分ける閾値も、分布に自然な切れ目が無いため判断で置いた値である。
 
 ■ 用語
@@ -163,7 +171,7 @@ def main(a):
     fq = {}
     for key, rows in fspots.items():
         lv = tree.grow(rows, max_leaves=a.flop_rules, min_w=150, max_depth=3)
-        sh = shapes(lv, key, H, t) if H else {}
+        sh = shapes(lv, key, H, t, tree.label) if H else {}
         fq[FLOPNAME[(key[0], key[2])]] = (tree.fmt(lv), tree.stats(rows)[1], error(lv), sh)
     for name in FORDER:
         rules, m, _, sh = fq[name]
@@ -187,7 +195,7 @@ def main(a):
                 nm = turnname(*k)
                 TORDER.append(nm)
                 tq[nm] = (turntree.fmt(lv), tree.stats(tspots[k])[1], error(lv),
-                          shapes(lv, k, TH, t) if TH else {})
+                          shapes(lv, k, TH, t, turntree.label) if TH else {})
     for nm in TORDER:
         rules, m, _, sh = tq[nm]
         L.append(f"{nm}    ベット率 {(1 - m['X']) * 100:.0f}%")
