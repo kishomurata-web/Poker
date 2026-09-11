@@ -15,7 +15,7 @@ often does not separate them in another.
 """
 import argparse, collections, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import gto, preds, turnpred, tree, turntree, round10, pattern
+import gto, preds, turnpred, tree, turntree, round10, pattern, maxscore
 
 SEAT = {'UTG_vs_BB': ('utg', 'bb'), 'UTG_vs_SB': ('utg', 'sb'), 'UTG_vs_BTN': ('btn', 'utg'),
         'BTN_vs_BB': ('btn', 'bb'), 'BTN_vs_SB': ('btn', 'sb'), 'SB_vs_BB': ('bb', 'sb')}
@@ -95,6 +95,79 @@ def shapes(leaves, key, H, t, label, min_share=0.10, min_cover=0.70):
     return out
 
 
+def play_table(leaves, key, H, label, weight, scale=1.0):
+    """For each rule: one action per group of hand strengths, biggest group first."""
+    out = []
+    for rs, path in leaves:
+        tw = sum(f.w for f, _ in rs)
+        by = collections.defaultdict(list)
+        for f, _ in rs:
+            k = (key[0], key[1], key[2], f.board, getattr(f, 'card', '-'))
+            for bk, (c, bp), mix in H.get(k, []):
+                by[bk].append((weight(f.w, c), mix))
+        if not by: continue
+        out.append((tw, label(path), round(tw * scale),
+                    maxscore.groups(by, pattern.BUCKETS)))
+    out.sort(reverse=True, key=lambda x: x[0])
+    return out
+
+
+def group_lines(gs):
+    """One line per action, with how much of the range it covers."""
+    tot = sum(x[2] for x in gs)
+    out = []
+    for i, (t, bks, w, _) in enumerate(gs):
+        # Only the first line may be the remainder; every other line has to name
+        # its own buckets, or two of them read as "everything else" at once.
+        if len(gs) == 1:              who = '全区分'
+        elif i == 0 and len(bks) > 6: who = 'それ以外'
+        else:                         who = ', '.join(bks)
+        pc = w / tot * 100
+        share = '<1%' if 0 < pc < 1 else f'{pc:.0f}%'
+        out.append(f"    {maxscore.TIER_NAMES[t]:6s} ← {who}    (レンジの{share})")
+    return out
+
+
+def hands_by_decision(path):
+    """(pair, line, node, board, card) -> [(bucket, (combos, betfreq), mix)]."""
+    out = collections.defaultdict(list)
+    for r, _, mix in maxscore.rows(path, lambda r: 1.0):
+        c = float(r['combos'])
+        out[(r['pair'], r['line'], r['node'], r['board'], r['card'])].append(
+            (r['bucket'], (c, 1 - mix[0]), mix))
+    return out
+
+
+PLAY_HEAD = """40BB SRP 実戦用アクション表（スコア最大化版）
+
+■ これは何か
+頻度表（40BB_SRP_v2.txt）はレンジ全体がどう動くかの記述で、混ぜて打つことを前提にしている。
+この表はそれとは目的が違い、アプリの採点で点を取るための表である。
+
+アプリは1ハンドの選択を、そのハンドにとっての最頻アクションと比べて採点する
+（index.html の tierFor / gtoScoreFor）。最頻アクションちょうどなら1.0、そうでなければ
+その最頻アクションに対する頻度の比。つまり混ぜるほど点は下がり、毎回その場の最頻
+アクションを選ぶのが最大化になる。人が正確に混ぜるのは難しいという前提に立つなら、
+実戦で引くのはこちらの表になる。
+
+■ 読み方
+ボードのルールを引き、自分のハンドがどの区分かを見て、その行のアクションを打つ。
+混ぜない。カッコ内はその区分がレンジに占める割合で、その行が何割の場面で効くかを示す。
+
+■ ハンドの区分（強い順）
+メイド: ストフラ・4カード / フルハウス / フラッシュ / ストレート / 3カード / 2ペア /
+        オーバーペア / トップペア / 2nd-3rdペア / 最下位ペア以下
+ノーペア: コンボドロー / ナッツFD / FD / OESD / ガットショット / 2BDFD / ノーペア
+メイドのペアはホールカードが絡んだものだけを数える。K K 7 で A 2 を持つ手は場のペアを
+見ているだけなので「ノーペア」に入る。
+
+■ アクション
+check / ~33% / 50% / 75% / 125%~ の5段階。実サイズの丸め方は頻度表と同じ。
+「~33%」に実サイズが2つ含まれるスポットがあり、どちらを打つかは使う人の判断になる。
+下の期待スコアは、そこを常に正しく選べた場合の値なので、その分だけ上振れしている。
+
+"""
+
 HEAD = """40BB SRP 簡易GTO戦略 v2（1755フロップ全数版）
 
 ■ ベットサイズの段階
@@ -168,10 +241,11 @@ def main(a):
     t = pattern.THRESHOLDS[a.pattern]
     H = pattern.load(a.hands) if a.hands else {}
     TH = pattern.load(a.turn_hands) if a.turn_hands else {}
-    fq = {}
+    fq, FLOPKEY, TURNKEY = {}, {}, {}
     for key, rows in fspots.items():
         lv = tree.grow(rows, max_leaves=a.flop_rules, min_w=150, max_depth=3)
         sh = shapes(lv, key, H, t, tree.label) if H else {}
+        FLOPKEY[FLOPNAME[(key[0], key[2])]] = (key, lv)
         fq[FLOPNAME[(key[0], key[2])]] = (tree.fmt(lv), tree.stats(rows)[1], error(lv), sh)
     for name in FORDER:
         rules, m, _, sh = fq[name]
@@ -194,6 +268,7 @@ def main(a):
                 lv = turntree.grow(tspots[k], max_leaves=a.turn_rules, min_w=80, max_depth=3)
                 nm = turnname(*k)
                 TORDER.append(nm)
+                TURNKEY[nm] = (k, lv)
                 tq[nm] = (turntree.fmt(lv), tree.stats(tspots[k])[1], error(lv),
                           shapes(lv, k, TH, t, turntree.label) if TH else {})
     for nm in TORDER:
@@ -226,6 +301,45 @@ def main(a):
           "同じ10クラスなら他の切り方でこれ以上は下がらない水準まで詰めてある。"]
 
     open(a.out, "w").write("\n".join(L) + "\n")
+
+    if a.play_out and (H or TH):
+        P = [PLAY_HEAD, "=========================  フロップ  =========================", ""]
+        HF = hands_by_decision(a.hands) if a.hands else {}
+        HT = hands_by_decision(a.turn_hands) if a.turn_hands else {}
+        sc = {}
+        for name in FORDER:
+            key, lv = FLOPKEY[name]
+            rt = play_table(lv, key, HF, tree.label, lambda w, c: w * c)
+            if not rt: continue
+            P.append(f"{name}")
+            for _, rule, n, gs in rt:
+                P.append(f"{rule}  [{n}]")
+                P += group_lines(gs)
+                P.append("")
+            sc[name] = sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / \
+                       sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
+        P += ["", "=========================  ターン  =========================", ""]
+        for nm in TORDER:
+            key, lv = TURNKEY[nm]
+            rt = play_table(lv, key, HT, turntree.label, lambda w, c: c)
+            if not rt: continue
+            P.append(f"{nm}")
+            for _, rule, n, gs in rt:
+                P.append(f"{rule}  [{n}]")
+                P += group_lines(gs)
+                P.append("")
+            sc[nm] = sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / \
+                     sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
+        P += ["", "=========================  付録：期待スコア  =========================", "",
+              "この表の通りに打った場合にアプリが付ける点の見込み。17区分の集計を真値として",
+              "測っているので、同じ区分の中でハンドごとに答えが割れる分だけ実際は下振れする。",
+              "正確な値にはコンボ単位のエクスポートが要る。", ""]
+        for nm in [n for n in FORDER if n in sc] + [n for n in TORDER if n in sc]:
+            P.append(f"{nm:30s} {sc[nm] * 100:5.1f}%")
+        tot = sum(sc.values()) / len(sc)
+        P += ["", f"全{len(sc)}スポットの単純平均 {tot * 100:.1f}%"]
+        open(a.play_out, "w").write("\n".join(P) + "\n")
+        print(f"{a.play_out}: {len(P)} lines")
     print(f"{a.out}: {len(L)} lines, {len(FORDER)} flop spots, {len(TORDER)} turn spots")
     for name in FORDER:
         assert sum(x[3] for x in fq[name][0]) == 22100, name
@@ -245,6 +359,8 @@ if __name__ == '__main__':
     p.add_argument('--pattern', default='B', choices=sorted(pattern.THRESHOLDS),
                    help='how hard a board has to lean before it is called a shape: '
                         'A loose, B middling, C strict')
+    p.add_argument('--play-out', default='40BB_SRP_play.txt',
+                   help='where to write the score-maximising action table')
     p.add_argument('--flop-rules', type=int, default=10)
     p.add_argument('--turn-rules', type=int, default=6)
     args = p.parse_args()
