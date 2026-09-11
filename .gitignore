@@ -8,3 +8,7 @@ package-lock.json
 # What the converter writes for the app to serve. Several gigabytes, rebuilt
 # from the collector's cache by convert.bat.
 postflop/
+
+# Bytecode for strategy/, written whenever build.py runs.
+__pycache__/
+*.pyc
