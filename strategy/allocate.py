@@ -19,6 +19,12 @@ import gto, preds, turnpred, tree, turntree, maxscore
 SIZES = [1, 2, 3, 4, 6, 8, 10]
 
 def load_hands(path, keyed_on_card):
+    """-> ({decision: [(bucket, combos, what)]}, whether `what` is real actions).
+
+    The app scores the action, so a curve drawn against the five tiers reads
+    about a point high. Exports that carry the actions are scored on them.
+    """
+    acts = maxscore.has_actions(path)
     H = collections.defaultdict(list)
     with gzip.open(path, 'rt') as f:
         for r in csv.DictReader(f):
@@ -27,11 +33,18 @@ def load_hands(path, keyed_on_card):
             if c <= 0: continue
             k = (r['pair'], r['line'], r['node'], r['board'])
             if keyed_on_card: k += (r['card'],)
-            H[k].append((r['bucket'], c, [float(r[x]) for x in
-                         ('check', 'b33', 'b50', 'b75', 'b125')]))
-    return H
+            if acts:
+                what = {}
+                for i in range(1, maxscore.TOP_N + 1):
+                    code = r.get(f'c{i}') or ''
+                    if code: what[code] = float(r[f'f{i}'])
+                if not what: continue
+            else:
+                what = [float(r[x]) for x in ('check', 'b33', 'b50', 'b75', 'b125')]
+            H[k].append((r['bucket'], c, what))
+    return H, acts
 
-def spot_curve(rows, H, key, grow, wf):
+def spot_curve(rows, H, key, grow, wf, acts=False):
     """-> {size: (score x weight, weight, rules, lines)} for one spot."""
     out = {}
     for n in SIZES:
@@ -40,10 +53,10 @@ def spot_curve(rows, H, key, grow, wf):
             by = collections.defaultdict(list)
             for f, _ in rs:
                 k = key + (f.board,) + ((f.card,) if hasattr(f, 'card') else ())
-                for bucket, c, mix in H.get(k, []):
-                    by[bucket].append((wf(f.w, c), mix))
+                for bucket, c, what in H.get(k, []):
+                    by[bucket].append((wf(f.w, c), what))
             if not by: continue
-            gs = maxscore.groups(by, [])
+            gs = maxscore.action_groups(by, []) if acts else maxscore.groups(by, [])
             rules += 1; lines += 1 + len(gs)
             for t, bks, wt, s in gs:
                 tot += s * wt; w_all += wt
@@ -53,22 +66,22 @@ def spot_curve(rows, H, key, grow, wf):
 def curves(a):
     F = {b: preds.Flop(b, w) for b, w in gto.WEIGHTS.items()}
     C = {}
-    HF = load_hands(a.hands, False)
+    HF, FA = load_hands(a.hands, False)
     sp = collections.defaultdict(list)
     for k, d in gto.read(a.flop): sp[k[:3]].append((F[k[3]], d))
     for k, rows in sp.items():
         C['F|' + '|'.join(k)] = spot_curve(
             rows, HF, k,
             lambda r, n: tree.grow(r, max_leaves=n, min_w=150, max_depth=a.depth),
-            lambda w, c: w * c)
-    HT = load_hands(a.turn_hands, True)
+            lambda w, c: w * c, FA)
+    HT, TA = load_hands(a.turn_hands, True)
     tsp = collections.defaultdict(list)
     for k, d in gto.read(a.turn): tsp[k[:3]].append((turnpred.Turn(k[3], k[4]), d))
     for k, rows in tsp.items():
         C['T|' + '|'.join(k)] = spot_curve(
             rows, HT, k,
             lambda r, n: turntree.grow(r, max_leaves=n, min_w=80, max_depth=a.depth),
-            lambda w, c: c)
+            lambda w, c: c, TA)
     return C
 
 def greedy(C, budget):
