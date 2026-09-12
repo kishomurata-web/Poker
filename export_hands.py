@@ -18,6 +18,13 @@ Columns:
     check, b33, b50, b75, b125
              the bucket's own mix over the five printed tiers, summing to 1.
              A bucket the player never holds here is written with an empty mix.
+    c1..c5, f1..f5
+             the five actions this bucket plays most, by their own codes, with
+             their frequencies. The table's five tiers each cover more than one
+             real size in most spots, and the app scores the size rather than
+             the tier, so naming the size is worth a couple of points for no
+             extra lines - but only if the size is known, which is what these
+             carry. Fewer than five live actions leaves the rest blank.
 """
 import argparse, csv, glob, gzip, json, os, sys
 
@@ -26,6 +33,7 @@ from export_freqs import decode_u16, as_float, action_frac
 
 COMBOS = 1326
 TIERS = ["check", "b33", "b50", "b75", "b125"]
+TOP_N = 5
 
 def tier_of(code, pot):
     """The five columns the strategy table prints, by share of pot."""
@@ -54,6 +62,7 @@ def by_bucket(rec, board):
     nb = len(HB.BUCKETS)
     got = [0.0] * nb
     mix = [[0.0] * 5 for _ in range(nb)]
+    per = [[0.0] * n for _ in range(nb)]        # per real action, not per tier
     for c in range(COMBOS):
         r = reach[c]
         if not r: continue
@@ -62,15 +71,18 @@ def by_bucket(rec, board):
         got[b] += r
         for a in range(n):
             s = strat[a * COMBOS + c]
-            if s: mix[b][slot[a]] += r * s
+            if s: mix[b][slot[a]] += r * s; per[b][a] += r * s
     total = sum(got)
     out = []
     for b in range(nb):
         if got[b]:
+            top = sorted(((per[b][a] / (got[b] * 10000.0), actions[a]) for a in range(n)),
+                         reverse=True)[:TOP_N]
             out.append((HB.BUCKETS[b], got[b] / 10000.0, got[b] / total if total else 0.0,
-                        [v / (got[b] * 10000.0) for v in mix[b]]))
+                        [v / (got[b] * 10000.0) for v in mix[b]],
+                        [(c, f) for f, c in top if f > 0]))
         else:
-            out.append((HB.BUCKETS[b], 0.0, 0.0, None))
+            out.append((HB.BUCKETS[b], 0.0, 0.0, None, []))
     return out
 
 def rows_for_file(path, problems, lines, nodes, keep_empty=False):
@@ -88,12 +100,15 @@ def rows_for_file(path, problems, lines, nodes, keep_empty=False):
                 rec = json.loads(raw)
                 card = rec.get("card") or "-"
                 cards = flop + ([card] if card != "-" else [])
-                for bucket, combos, share, mix in by_bucket(rec, cards):
+                for bucket, combos, share, mix, top in by_bucket(rec, cards):
                     if mix is None and not keep_empty: continue
+                    cols = ["", "", "", "", ""] if mix is None else \
+                           [round(v, 4) for v in mix]
+                    flat = []
+                    for i in range(TOP_N):
+                        flat += [top[i][0], round(top[i][1], 4)] if i < len(top) else ["", ""]
                     yield [pair, line, node, board, card, bucket,
-                           round(combos, 1), round(share, 4)] + \
-                          (["", "", "", "", ""] if mix is None
-                           else [round(v, 4) for v in mix])
+                           round(combos, 4), round(share, 4)] + cols + flat
             except Exception as exc:                      # noqa: BLE001
                 problems.append("%s line %d: %s" % (os.path.basename(path), n, exc))
 
@@ -104,7 +119,8 @@ def export(cache, out, lines, nodes, keep_empty=False):
     with gzip.open(out, "wt", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["pair", "line", "node", "board", "card", "bucket",
-                    "combos", "share"] + TIERS)
+                    "combos", "share"] + TIERS +
+                   [x for i in range(1, TOP_N + 1) for x in (f"c{i}", f"f{i}")])
         for i, p in enumerate(files, 1):
             for row in rows_for_file(p, problems, lines, nodes, keep_empty):
                 w.writerow(row); written += 1
@@ -142,7 +158,7 @@ def selftest():
     # richer shape and so never exercised the code that reads them.
     rec = {"actions": ["X", "R2"],
            "pot": "6.100", "strategy": enc(strat), "reach": enc(reach)}
-    res = {b: (combos, share, mix) for b, combos, share, mix in by_bucket(rec, board)}
+    res = {b: (combos, share, mix, top) for b, combos, share, mix, top in by_bucket(rec, board)}
     check("a bucket the player holds is sized in combos", res["トップペア"][0], 4.0)
     check("and carries its share of the range", round(res["トップペア"][1], 3), 0.4)
     check("top pair is all in the ~33% column", [round(v, 3) for v in res["トップペア"][2]],
@@ -179,13 +195,17 @@ def selftest():
         check("the spot is read off the filename",
               rows[0][:5], ["UTG_vs_BB", "FLOP", "flop_IP", "AsKh7d", "-"])
         top = next(r for r in rows if r[5] == "トップペア")
-        check("top pair's row carries its mix", top[8:], [0.0, 1.0, 0.0, 0.0, 0.0])
+        check("top pair's row carries its mix", top[8:13], [0.0, 1.0, 0.0, 0.0, 0.0])
         air = next(r for r in rows if r[5] == "ノーペア")
-        check("and air's row carries its own", air[8:], [1.0, 0.0, 0.0, 0.0, 0.0])
+        check("and air's row carries its own", air[8:13], [1.0, 0.0, 0.0, 0.0, 0.0])
         empty = next(r for r in rows if r[5] == "フルハウス")
-        check("a bucket never held writes blanks", empty[8:], ["", "", "", "", ""])
+        check("a bucket never held writes blanks", empty[8:13], ["", "", "", "", ""])
+    check("and names no actions", empty[13:], [""] * (2 * TOP_N))
+    check("top pair's real size is named", top[13:15], ["R2", 1.0])
+    check("air's is too", air[13:15], ["X", 1.0])
+    check("with nothing after the actions it plays", top[15:], [""] * (2 * TOP_N - 2))
 
-    print("\n=== %d passed, %d failed ===" % (21 - len(fails), len(fails)))
+    print("\n=== %d passed, %d failed ===" % (25 - len(fails), len(fails)))
     return 1 if fails else 0
 
 def main():
