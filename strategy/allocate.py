@@ -58,14 +58,16 @@ def curves(a):
     for k, d in gto.read(a.flop): sp[k[:3]].append((F[k[3]], d))
     for k, rows in sp.items():
         C['F|' + '|'.join(k)] = spot_curve(
-            rows, HF, k, lambda r, n: tree.grow(r, max_leaves=n, min_w=150, max_depth=3),
+            rows, HF, k,
+            lambda r, n: tree.grow(r, max_leaves=n, min_w=150, max_depth=a.depth),
             lambda w, c: w * c)
     HT = load_hands(a.turn_hands, True)
     tsp = collections.defaultdict(list)
     for k, d in gto.read(a.turn): tsp[k[:3]].append((turnpred.Turn(k[3], k[4]), d))
     for k, rows in tsp.items():
         C['T|' + '|'.join(k)] = spot_curve(
-            rows, HT, k, lambda r, n: turntree.grow(r, max_leaves=n, min_w=80, max_depth=3),
+            rows, HT, k,
+            lambda r, n: turntree.grow(r, max_leaves=n, min_w=80, max_depth=a.depth),
             lambda w, c: c)
     return C
 
@@ -117,6 +119,8 @@ if __name__ == '__main__':
     p.add_argument('--hands', default='hands40.csv.gz')
     p.add_argument('--turn-hands', default='turnhands40.csv.gz')
     p.add_argument('--budget', type=int, default=300)
+    p.add_argument('--depth', type=int, default=3,
+                   help='conditions per rule; must match build.py --depth')
     p.add_argument('--curves', default='curves.json')
     p.add_argument('--out', default='alloc.json')
     main(p.parse_args())

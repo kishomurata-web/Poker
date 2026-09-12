@@ -286,7 +286,7 @@ def main(a):
     fq, FLOPKEY, TURNKEY = {}, {}, {}
     for key, rows in fspots.items():
         lv = tree.grow(rows, max_leaves=rules_for('F', key, a.flop_rules),
-                       min_w=150, max_depth=3)
+                       min_w=150, max_depth=a.depth)
         sh = shapes(lv, key, H, t, tree.label) if H else {}
         FLOPKEY[FLOPNAME[(key[0], key[2])]] = (key, lv)
         fq[FLOPNAME[(key[0], key[2])]] = (tree.fmt(lv), tree.stats(rows)[1], error(lv), sh)
@@ -305,7 +305,7 @@ def main(a):
                 k = (pair, line, node)
                 if k not in tspots: continue
                 lv = turntree.grow(tspots[k], max_leaves=rules_for('T', k, a.turn_rules),
-                                   min_w=80, max_depth=3)
+                                   min_w=80, max_depth=a.depth)
                 nm = turnname(*k)
                 TORDER.append(nm)
                 TURNKEY[nm] = (k, lv)
@@ -439,6 +439,10 @@ if __name__ == '__main__':
     p.add_argument('--pattern', default='B', choices=sorted(pattern.THRESHOLDS),
                    help='how hard a board has to lean before it is called a shape: '
                         'A loose, B middling, C strict')
+    p.add_argument('--depth', type=int, default=3,
+                   help='how many conditions a rule may carry. A fourth is worth about\n'
+                        'two tenths of a point and costs no lines, but is one more thing\n'
+                        'to check at the table')
     p.add_argument('--alloc', help="allocate.py's per-spot rule counts, for a "
                                    "table sized to be memorised")
     p.add_argument('--merged-out', default='40BB_SRP_all.txt',
