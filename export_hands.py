@@ -111,12 +111,18 @@ def by_bucket(rec, board):
             out.append((HB.BUCKETS[b], 0.0, 0.0, None, None, None))
     return out
 
-def rows_for_file(path, problems, lines, nodes, keep_empty=False):
+def trim(v, places):
+    v = round(v, places)
+    return 0 if v == 0 else v
+
+
+def rows_for_file(path, problems, lines, nodes, keep_empty=False, pairs=None):
     name = os.path.basename(path)[: -len(".jsonl")]
     parts = name.split("__")
     if len(parts) != 4: return
     pair, board, line, node = parts
     if (lines and line not in lines) or (nodes and node not in nodes): return
+    if pairs and pair not in pairs: return
     flop = [board[i:i + 2] for i in range(0, 6, 2)]
     with open(path, encoding="utf-8") as fh:
         for n, raw in enumerate(fh, 1):
@@ -131,16 +137,20 @@ def rows_for_file(path, problems, lines, nodes, keep_empty=False):
                     if mix is None and not keep_empty: continue
                     cols = ["", "", "", "", ""] if mix is None else \
                            [round(v, 4) for v in mix]
-                    fs = [round(freqs[i], 4) if freqs and i < len(freqs) else ""
+                    # EV loss is carried to a thousandth, which is the
+                    # precision the site itself keeps it at, and exact zeros
+                    # are written as one character: most actions the solver
+                    # plays give up nothing, so those cells are most of the file
+                    fs = [trim(freqs[i], 4) if freqs and i < len(freqs) else ""
                           for i in range(MAX_ACT)]
-                    ls = [round(losses[i], 4) if losses and i < len(losses) else ""
+                    ls = [trim(losses[i], 3) if losses and i < len(losses) else ""
                           for i in range(MAX_ACT)]
                     yield [pair, line, node, board, card, bucket,
                            round(combos, 4), round(share, 4)] + cols + [menu] + fs + ls
             except Exception as exc:                      # noqa: BLE001
                 problems.append("%s line %d: %s" % (os.path.basename(path), n, exc))
 
-def export(cache, out, lines, nodes, keep_empty=False):
+def export(cache, out, lines, nodes, keep_empty=False, pairs=None):
     files = sorted(glob.glob(os.path.join(cache, "*.jsonl")))
     if not files: sys.exit("no .jsonl files under %s" % cache)
     problems, written = [], 0
@@ -151,7 +161,7 @@ def export(cache, out, lines, nodes, keep_empty=False):
                    [f"f{i}" for i in range(1, MAX_ACT + 1)] +
                    [f"l{i}" for i in range(1, MAX_ACT + 1)])
         for i, p in enumerate(files, 1):
-            for row in rows_for_file(p, problems, lines, nodes, keep_empty):
+            for row in rows_for_file(p, problems, lines, nodes, keep_empty, pairs):
                 w.writerow(row); written += 1
             if i % 500 == 0:
                 print("  %d/%d files, %d rows" % (i, len(files), written), flush=True)
@@ -260,6 +270,10 @@ def main():
     ap.add_argument("--out", default="hands40.csv.gz")
     ap.add_argument("--lines", default="")
     ap.add_argument("--nodes", default="")
+    ap.add_argument("--pairs", default="",
+                    help="comma-separated pairs to keep, e.g. UTG_vs_BB,BTN_vs_BB. "
+                         "Splits one export into several smaller files when the "
+                         "whole thing will not travel.")
     ap.add_argument("--all-buckets", action="store_true",
                     help="also write the buckets the range never holds here")
     ap.add_argument("--selftest", action="store_true")
@@ -267,7 +281,7 @@ def main():
     if a.selftest: sys.exit(selftest())
     if not a.cache: sys.exit("--cache is required (or --selftest)")
     sp = lambda v: {x.strip() for x in v.split(",") if x.strip()}
-    export(a.cache, a.out, sp(a.lines), sp(a.nodes), a.all_buckets)
+    export(a.cache, a.out, sp(a.lines), sp(a.nodes), a.all_buckets, sp(a.pairs))
 
 if __name__ == "__main__":
     main()
