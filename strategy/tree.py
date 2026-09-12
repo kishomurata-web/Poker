@@ -144,10 +144,35 @@ def label(path):
                 words.append(f"{pre}{r(lo)}{suf}" if lo == hi else f"{pre}{r(lo)}〜{r(hi)}{suf}")
             elif lo is not None: words.append(f"{pre}{r(lo)}{suf}以上")
             else:                words.append(f"{pre}{r(hi)}{suf}以下")
+    return '　'.join(tidy(words)) if words else '全ボード'
+
+
+# A board cannot be monotone and also rainbow, and a board that is three to a
+# straight is already both of its halves, so a rule that has said one of these
+# does not need the other said again. Saying it is neither monotone nor
+# rainbow is the one case worth a word of its own.
+IMPLIED = [({'モノトーン'}, {'レインボー以外'}),
+           ({'レインボー'}, {'モノトーン以外'}),
+           # on the turn the flop's suits and the four-card board's are
+           # different statements, so these keep their own words
+           ({'フロップがモノトーン'}, {'レインボー以外', 'フラッシュ完成盤面',
+                                     'ターンでフラッシュ完成しない'}),
+           ({'フロップがレインボー'}, {'モノトーン以外', 'フラッシュ未完成盤面',
+                                     'ターンでフラッシュ完成しない', '同スート4枚目でない'}),
+           ({'ストレート完成'}, {'HMSD', 'MLSD', 'HM,MLSD'}),
+           ({'HM,MLSD'}, {'HMSD', 'MLSD'}),
+           ({'ホイール完成'}, {'ホイールボード'})]
+
+
+def tidy(words):
     s = set(words)
     if {'モノトーン以外', 'レインボー以外'} <= s:
         words = [w for w in words if w not in ('モノトーン以外', 'レインボー以外')] + ['2トーン']
-    return '　'.join(words) if words else '全ボード'
+        s = set(words)
+    drop = set()
+    for need, redundant in IMPLIED:
+        if need <= s: drop |= redundant
+    return [w for w in words if w not in drop]
 
 def fmt(leaves, scale=1.0, step10=True):
     """step10 rounds every printed line to multiples of ten, chosen against the

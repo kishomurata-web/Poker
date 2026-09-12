@@ -4,8 +4,8 @@ RANKS = 'AKQJT98765432'
 
 BOOL = {
  'fpair': ('フロップがペアボード','フロップがペアでない'),
- 'fmono': ('フロップがモノトーン','モノトーン以外'),
- 'frain': ('フロップがレインボー','レインボー以外'),
+ 'fmono': ('フロップがモノトーン', 'モノトーン以外'),
+ 'frain': ('フロップがレインボー', 'レインボー以外'),
  'fstr':  ('フロップでストレート完成','フロップでストレート未完成'),
  'pnow':  ('ターンまでにボードがペア','ターンまでボードがペアにならない'),
  'tpair': ('ターンでボードがペアになる','ターンでボードがペアにならない'),
@@ -65,7 +65,7 @@ def label(path):
                 words.append(f"{pre}{r(lo)}{suf}" if lo==hi else f"{pre}{r(lo)}〜{r(hi)}{suf}")
             elif lo is not None: words.append(f"{pre}{r(lo)}{suf}以上")
             else: words.append(f"{pre}{r(hi)}{suf}以下")
-    return '　'.join(words) if words else '全ボード'
+    return '　'.join(tree.tidy(words)) if words else '全ボード'
 
 def grow(rows, max_leaves=6, min_w=80, max_depth=3, min_split=4):
     leaves=[(rows,[])]
