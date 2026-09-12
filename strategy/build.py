@@ -95,7 +95,7 @@ def shapes(leaves, key, H, t, label, min_share=0.10, min_cover=0.70):
     return out
 
 
-def play_table(leaves, key, H, label, weight, scale=1.0):
+def play_table(leaves, key, H, label, weight, by_action, names, scale=1.0):
     """For each rule: one action per group of hand strengths, biggest group first."""
     out = []
     for rs, path in leaves:
@@ -103,11 +103,16 @@ def play_table(leaves, key, H, label, weight, scale=1.0):
         by = collections.defaultdict(list)
         for f, _ in rs:
             k = (key[0], key[1], key[2], f.board, getattr(f, 'card', '-'))
-            for bk, (c, bp), mix in H.get(k, []):
-                by[bk].append((weight(f.w, c), mix))
+            for bk, c, what in H.get(k, []):
+                by[bk].append((weight(f.w, c), what))
         if not by: continue
-        out.append((tw, label(path), round(tw * scale),
-                    maxscore.groups(by, pattern.BUCKETS)))
+        if by_action:
+            gs = [(names.get((key[0], key[2], code), code), bks, w, s)
+                  for code, bks, w, s in maxscore.action_groups(by, pattern.BUCKETS)]
+        else:
+            gs = [(maxscore.TIER_NAMES[t], bks, w, s)
+                  for t, bks, w, s in maxscore.groups(by, pattern.BUCKETS)]
+        out.append((tw, label(path), round(tw * scale), gs))
     out.sort(reverse=True, key=lambda x: x[0])
     return out
 
@@ -131,7 +136,7 @@ def group_lines(gs):
     """One line per action, with how much of the range it covers."""
     tot = sum(x[2] for x in gs)
     out = []
-    for i, (t, bks, w, _) in enumerate(gs):
+    for i, (name, bks, w, _) in enumerate(gs):
         # Only the first line may be the remainder; every other line has to name
         # its own buckets, or two of them read as "everything else" at once.
         if len(gs) == 1:              who = '全区分'
@@ -139,17 +144,40 @@ def group_lines(gs):
         else:                         who = ', '.join(bks)
         pc = w / tot * 100
         share = '<1%' if 0 < pc < 1 else f'{pc:.0f}%'
-        out.append(f"    {maxscore.TIER_NAMES[t]:6s} ← {who}    (レンジの{share})")
+        out.append(f"    {name:6s} ← {who}    (レンジの{share})")
     return out
 
 
 def hands_by_decision(path):
-    """(pair, line, node, board, card) -> [(bucket, (combos, betfreq), mix)]."""
+    """(pair, line, node, board, card) -> [(bucket, combos, what to choose on)].
+
+    The last element is a map of real action to frequency when the export
+    carries one, and the five-tier mix when it does not. The app scores the
+    action, so the first is what the table wants; the second is what an older
+    export can still answer with.
+    """
     out = collections.defaultdict(list)
+    if maxscore.has_actions(path):
+        for r, _, f in maxscore.action_rows(path, lambda r: 1.0):
+            out[(r['pair'], r['line'], r['node'], r['board'], r['card'])].append(
+                (r['bucket'], float(r['combos']), f))
+        return out, True
     for r, _, mix in maxscore.rows(path, lambda r: 1.0):
-        c = float(r['combos'])
         out[(r['pair'], r['line'], r['node'], r['board'], r['card'])].append(
-            (r['bucket'], (c, 1 - mix[0]), mix))
+            (r['bucket'], float(r['combos']), mix))
+    return out, False
+
+
+def size_labels(path):
+    """(pair, node, code) -> the size as a share of pot, e.g. "33%"."""
+    import csv, gzip
+    out = {}
+    with gzip.open(path, 'rt') as fh:
+        for r in csv.DictReader(fh):
+            code = r['code']
+            if code == 'X': out[(r['pair'], r['node'], code)] = 'check'
+            elif code == 'RAI': out[(r['pair'], r['node'], code)] = 'all-in'
+            elif r['frac']: out[(r['pair'], r['node'], code)] = f"{round(float(r['frac']) * 100)}%"
     return out
 
 
@@ -340,12 +368,14 @@ def main(a):
 
     if a.play_out and (H or TH):
         P = [PLAY_HEAD, "=========================  フロップ  =========================", ""]
-        HF = hands_by_decision(a.hands) if a.hands else {}
-        HT = hands_by_decision(a.turn_hands) if a.turn_hands else {}
+        HF, FA = hands_by_decision(a.hands) if a.hands else ({}, False)
+        HT, TA_ = hands_by_decision(a.turn_hands) if a.turn_hands else ({}, False)
+        NF = size_labels(a.flop) if FA else {}
+        NT = size_labels(a.turn) if TA_ else {}
         sc = {}
         for name in FORDER:
             key, lv = FLOPKEY[name]
-            rt = play_table(lv, key, HF, tree.label, lambda w, c: w * c)
+            rt = play_table(lv, key, HF, tree.label, lambda w, c: w * c, FA, NF)
             if not rt: continue
             P.append(f"{name}")
             for _, rule, n, gs in rt:
@@ -357,7 +387,7 @@ def main(a):
         P += ["", "=========================  ターン  =========================", ""]
         for nm in TORDER:
             key, lv = TURNKEY[nm]
-            rt = play_table(lv, key, HT, turntree.label, lambda w, c: c)
+            rt = play_table(lv, key, HT, turntree.label, lambda w, c: c, TA_, NT)
             if not rt: continue
             P.append(f"{nm}")
             for _, rule, n, gs in rt:
@@ -388,11 +418,11 @@ def main(a):
             play = {}
             for name in FORDER:
                 key, lv = FLOPKEY[name]
-                for _, rule, _, gs in play_table(lv, key, HF, tree.label, lambda w, c: w * c):
+                for _, rule, _, gs in play_table(lv, key, HF, tree.label, lambda w, c: w * c, FA, NF):
                     play[(name, rule)] = gs
             for nm in TORDER:
                 key, lv = TURNKEY[nm]
-                for _, rule, _, gs in play_table(lv, key, HT, turntree.label, lambda w, c: c):
+                for _, rule, _, gs in play_table(lv, key, HT, turntree.label, lambda w, c: c, TA_, NT):
                     play[(nm, rule)] = gs
             M = MERGED_HEAD.split("\n")
             if a.alloc:
