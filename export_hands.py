@@ -18,22 +18,35 @@ Columns:
     check, b33, b50, b75, b125
              the bucket's own mix over the five printed tiers, summing to 1.
              A bucket the player never holds here is written with an empty mix.
-    c1..c5, f1..f5
-             the five actions this bucket plays most, by their own codes, with
-             their frequencies. The table's five tiers each cover more than one
-             real size in most spots, and the app scores the size rather than
-             the tier, so naming the size is worth a couple of points for no
-             extra lines - but only if the size is known, which is what these
-             carry. Fewer than five live actions leaves the rest blank.
+    menu     every action available here, in the order the solver lists them,
+             joined by "|". It repeats down the file and costs almost nothing
+             compressed, and it is what makes the columns below readable
+             without a second file to line them up against.
+    f1..f10  this bucket's frequency for each action of the menu, in that order
+    l1..l10  the EV it gives up by taking that action instead of the best one,
+             in the solution's own units, averaged over the bucket weighted by
+             reach. Zero for the actions the solver plays here.
+
+             Frequency and EV loss answer different questions. The app scores
+             frequency and never looks at EV inside the strategy, so a table
+             built to score checks ranges the solver bets a third of the time -
+             the check is the most common action for every hand class, and
+             being most common is all the score asks. EV loss is what says
+             whether that costs anything.
 """
-import argparse, csv, glob, gzip, json, os, sys
+import argparse, base64, csv, glob, gzip, json, os, struct, sys
 
 import handbuckets as HB
 from export_freqs import decode_u16, as_float, action_frac
 
+
+def decode_f32(b64):
+    raw = gzip.decompress(base64.b64decode(b64))
+    return struct.unpack("<%df" % (len(raw) // 4), raw)
+
 COMBOS = 1326
 TIERS = ["check", "b33", "b50", "b75", "b125"]
-TOP_N = 5
+MAX_ACT = 10
 
 def tier_of(code, pot):
     """The five columns the strategy table prints, by share of pot."""
@@ -47,12 +60,24 @@ def tier_of(code, pot):
     if f < 1.755: return 4
     return 4
 
+def ev_loss(evs, n):
+    """Per combo, what each action gives up against that combo's best action.
+
+    Only per combo does this mean anything: on a spade board Qs9s and Qh9h sit
+    in the same bucket but not behind the same best action.
+    """
+    best = [max(evs[a * COMBOS + h] for a in range(n)) for h in range(COMBOS)]
+    return [[best[h] - evs[a * COMBOS + h] for h in range(COMBOS)] for a in range(n)]
+
+
 def by_bucket(rec, board):
     """[(bucket, combos, [5 tier frequencies])] for one decision."""
     actions = rec["actions"]
     n = len(actions)
     strat = decode_u16(rec["strategy"])
     reach = decode_u16(rec["reach"])
+    evs = decode_f32(rec["evs"]) if "evs" in rec else None
+    loss = ev_loss(evs, n) if evs and len(evs) == n * COMBOS else None
     if len(strat) != n * COMBOS or len(reach) != COMBOS:
         raise ValueError("record has %d strategy and %d reach entries, expected %d and %d"
                          % (len(strat), len(reach), n * COMBOS, COMBOS))
@@ -63,6 +88,7 @@ def by_bucket(rec, board):
     got = [0.0] * nb
     mix = [[0.0] * 5 for _ in range(nb)]
     per = [[0.0] * n for _ in range(nb)]        # per real action, not per tier
+    lost = [[0.0] * n for _ in range(nb)]
     for c in range(COMBOS):
         r = reach[c]
         if not r: continue
@@ -72,17 +98,17 @@ def by_bucket(rec, board):
         for a in range(n):
             s = strat[a * COMBOS + c]
             if s: mix[b][slot[a]] += r * s; per[b][a] += r * s
+            if loss: lost[b][a] += r * loss[a][c]
     total = sum(got)
     out = []
     for b in range(nb):
         if got[b]:
-            top = sorted(((per[b][a] / (got[b] * 10000.0), actions[a]) for a in range(n)),
-                         reverse=True)[:TOP_N]
             out.append((HB.BUCKETS[b], got[b] / 10000.0, got[b] / total if total else 0.0,
                         [v / (got[b] * 10000.0) for v in mix[b]],
-                        [(c, f) for f, c in top if f > 0]))
+                        [per[b][a] / (got[b] * 10000.0) for a in range(n)],
+                        [lost[b][a] / got[b] for a in range(n)] if loss else None))
         else:
-            out.append((HB.BUCKETS[b], 0.0, 0.0, None, []))
+            out.append((HB.BUCKETS[b], 0.0, 0.0, None, None, None))
     return out
 
 def rows_for_file(path, problems, lines, nodes, keep_empty=False):
@@ -100,15 +126,17 @@ def rows_for_file(path, problems, lines, nodes, keep_empty=False):
                 rec = json.loads(raw)
                 card = rec.get("card") or "-"
                 cards = flop + ([card] if card != "-" else [])
-                for bucket, combos, share, mix, top in by_bucket(rec, cards):
+                menu = "|".join(rec["actions"])
+                for bucket, combos, share, mix, freqs, losses in by_bucket(rec, cards):
                     if mix is None and not keep_empty: continue
                     cols = ["", "", "", "", ""] if mix is None else \
                            [round(v, 4) for v in mix]
-                    flat = []
-                    for i in range(TOP_N):
-                        flat += [top[i][0], round(top[i][1], 4)] if i < len(top) else ["", ""]
+                    fs = [round(freqs[i], 4) if freqs and i < len(freqs) else ""
+                          for i in range(MAX_ACT)]
+                    ls = [round(losses[i], 4) if losses and i < len(losses) else ""
+                          for i in range(MAX_ACT)]
                     yield [pair, line, node, board, card, bucket,
-                           round(combos, 4), round(share, 4)] + cols + flat
+                           round(combos, 4), round(share, 4)] + cols + [menu] + fs + ls
             except Exception as exc:                      # noqa: BLE001
                 problems.append("%s line %d: %s" % (os.path.basename(path), n, exc))
 
@@ -119,8 +147,9 @@ def export(cache, out, lines, nodes, keep_empty=False):
     with gzip.open(out, "wt", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["pair", "line", "node", "board", "card", "bucket",
-                    "combos", "share"] + TIERS +
-                   [x for i in range(1, TOP_N + 1) for x in (f"c{i}", f"f{i}")])
+                    "combos", "share"] + TIERS + ["menu"] +
+                   [f"f{i}" for i in range(1, MAX_ACT + 1)] +
+                   [f"l{i}" for i in range(1, MAX_ACT + 1)])
         for i, p in enumerate(files, 1):
             for row in rows_for_file(p, problems, lines, nodes, keep_empty):
                 w.writerow(row); written += 1
@@ -142,6 +171,10 @@ def selftest():
         raw = struct.pack("<%dH" % len(vals), *vals)
         return base64.b64encode(gzip.compress(raw)).decode()
 
+    def encf(vals):
+        raw = struct.pack("<%df" % len(vals), *vals)
+        return base64.b64encode(gzip.compress(raw)).decode()
+
     board = ["As", "Kh", "7d"]
     tbl = HB.table(board)
     top = [c for c, b in enumerate(tbl) if b == HB.BIDX["トップペア"]]
@@ -156,15 +189,27 @@ def selftest():
     # The cache writes actions as bare code strings - "X", "R2", "RAI" - which
     # is what export_freqs.py reads. An earlier version of this test used a
     # richer shape and so never exercised the code that reads them.
-    rec = {"actions": ["X", "R2"],
-           "pot": "6.100", "strategy": enc(strat), "reach": enc(reach)}
-    res = {b: (combos, share, mix, top) for b, combos, share, mix, top in by_bucket(rec, board)}
+    # Top pair gives up 2bb by checking; air gives up 1bb by betting. Both are
+    # playing their own best action, so both should come out at no loss.
+    evs = [0.0] * (2 * COMBOS)
+    for c in top[:4]: evs[c] = -2.0
+    for c in air[:6]: evs[COMBOS + c] = -1.0
+    rec = {"actions": ["X", "R2"], "pot": "6.100",
+           "strategy": enc(strat), "reach": enc(reach), "evs": encf(evs)}
+    res = {b: (combos, share, mix, fs, ls)
+           for b, combos, share, mix, fs, ls in by_bucket(rec, board)}
     check("a bucket the player holds is sized in combos", res["トップペア"][0], 4.0)
     check("and carries its share of the range", round(res["トップペア"][1], 3), 0.4)
     check("top pair is all in the ~33% column", [round(v, 3) for v in res["トップペア"][2]],
           [0.0, 1.0, 0.0, 0.0, 0.0])
     check("air is all in the check column", [round(v, 3) for v in res["ノーペア"][2]],
           [1.0, 0.0, 0.0, 0.0, 0.0])
+    check("top pair's frequencies follow the menu", [round(v, 3) for v in res["トップペア"][3]],
+          [0.0, 1.0])
+    check("and it gives up nothing by betting", [round(v, 3) for v in res["トップペア"][4]],
+          [2.0, 0.0])
+    check("air gives up nothing by checking", [round(v, 3) for v in res["ノーペア"][4]],
+          [0.0, 1.0])
     check("a bucket never held is left empty", res["フルハウス"][2], None)
     check("and counts no combos", res["フルハウス"][0], 0.0)
     check("the shares add to the whole range",
@@ -200,12 +245,13 @@ def selftest():
         check("and air's row carries its own", air[8:13], [1.0, 0.0, 0.0, 0.0, 0.0])
         empty = next(r for r in rows if r[5] == "フルハウス")
         check("a bucket never held writes blanks", empty[8:13], ["", "", "", "", ""])
-    check("and names no actions", empty[13:], [""] * (2 * TOP_N))
-    check("top pair's real size is named", top[13:15], ["R2", 1.0])
-    check("air's is too", air[13:15], ["X", 1.0])
-    check("with nothing after the actions it plays", top[15:], [""] * (2 * TOP_N - 2))
+        check("every row names the menu it is read against", top[13], "X|R2")
+        check("top pair's frequencies sit under the menu", top[14:16], [0.0, 1.0])
+        check("and the rest of the ten are blank", top[16:24], [""] * 8)
+        check("its EV loss sits under the same menu", top[24:26], [2.0, 0.0])
+        check("air gives up nothing by checking", air[24:26], [0.0, 1.0])
 
-    print("\n=== %d passed, %d failed ===" % (25 - len(fails), len(fails)))
+    print("\n=== %d passed, %d failed ===" % (27 - len(fails), len(fails)))
     return 1 if fails else 0
 
 def main():

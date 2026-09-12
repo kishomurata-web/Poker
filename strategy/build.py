@@ -106,7 +106,10 @@ def play_table(leaves, key, H, label, weight, by_action, names, scale=1.0):
             for bk, c, what in H.get(k, []):
                 by[bk].append((weight(f.w, c), what))
         if not by: continue
-        if by_action:
+        if by_action == 'ev':
+            gs = [(names.get((key[0], key[2], code), code), bks, w, s)
+                  for code, bks, w, s in maxscore.action_groups_ev(by, pattern.BUCKETS)]
+        elif by_action == 'action':
             gs = [(names.get((key[0], key[2], code), code), bks, w, s)
                   for code, bks, w, s in maxscore.action_groups(by, pattern.BUCKETS)]
         else:
@@ -148,7 +151,7 @@ def group_lines(gs):
     return out
 
 
-def hands_by_decision(path):
+def hands_by_decision(path, want_ev=False):
     """(pair, line, node, board, card) -> [(bucket, combos, what to choose on)].
 
     The last element is a map of real action to frequency when the export
@@ -158,14 +161,15 @@ def hands_by_decision(path):
     """
     out = collections.defaultdict(list)
     if maxscore.has_actions(path):
-        for r, _, f in maxscore.action_rows(path, lambda r: 1.0):
+        ev = want_ev and maxscore.has_ev(path)
+        for r, _, f in maxscore.action_rows(path, lambda r: 1.0, ev):
             out[(r['pair'], r['line'], r['node'], r['board'], r['card'])].append(
                 (r['bucket'], float(r['combos']), f))
-        return out, True
+        return out, ('ev' if ev else 'action')
     for r, _, mix in maxscore.rows(path, lambda r: 1.0):
         out[(r['pair'], r['line'], r['node'], r['board'], r['card'])].append(
             (r['bucket'], float(r['combos']), mix))
-    return out, False
+    return out, 'tier' 
 
 
 def size_labels(path):
@@ -368,10 +372,12 @@ def main(a):
 
     if a.play_out and (H or TH):
         P = [PLAY_HEAD, "=========================  フロップ  =========================", ""]
-        HF, FA = hands_by_decision(a.hands) if a.hands else ({}, False)
-        HT, TA_ = hands_by_decision(a.turn_hands) if a.turn_hands else ({}, False)
-        NF = size_labels(a.flop) if FA else {}
-        NT = size_labels(a.turn) if TA_ else {}
+        ev = a.objective == 'ev'
+        HF, FA = hands_by_decision(a.hands, ev) if a.hands else ({}, 'tier')
+        HT, TA_ = hands_by_decision(a.turn_hands, ev) if a.turn_hands else ({}, 'tier')
+        NF = size_labels(a.flop) if FA != 'tier' else {}
+        NT = size_labels(a.turn) if TA_ != 'tier' else {}
+        EV = FA == 'ev' or TA_ == 'ev'
         sc = {}
         for name in FORDER:
             key, lv = FLOPKEY[name]
@@ -396,21 +402,30 @@ def main(a):
                 P.append("")
             sw = sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
             sc[nm] = (sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / sw, sw)
-        P += ["", "=========================  付録：期待スコア  =========================", "",
-              "この表の通りに打った場合にアプリが付ける点の見込み。17区分の集計を真値として",
-              "測っているので、同じ区分の中でハンドごとに答えが割れる分だけ実際は下振れする。",
-              "正確な値にはコンボ単位のエクスポートが要る。", ""]
+        if EV:
+            P += ["", "=========================  付録：平均EVロス  =========================", "",
+                  "この表の通りに打った場合に、各ハンドにとっての最善手と比べて失うEV。",
+                  "ソリューションの単位（チップEVならbb）。0に近いほどよい。",
+                  "17区分の集計で測っているので、同じ区分の中でハンドごとに最善手が割れる分だけ",
+                  "実際は大きくなる。", ""]
+        else:
+            P += ["", "=========================  付録：期待スコア  =========================", "",
+                  "この表の通りに打った場合にアプリが付ける点の見込み。17区分の集計を真値として",
+                  "測っているので、同じ区分の中でハンドごとに答えが割れる分だけ実際は下振れする。",
+                  "正確な値にはコンボ単位のエクスポートが要る。", ""]
         for nm in [n for n in FORDER if n in sc] + [n for n in TORDER if n in sc]:
-            P.append(f"{nm:30s} {sc[nm][0] * 100:5.1f}%")
+            P.append(f"{nm:30s} {sc[nm][0]:7.4f}" if EV
+                     else f"{nm:30s} {sc[nm][0] * 100:5.1f}%")
         plain = sum(v for v, _ in sc.values()) / len(sc)
         wsum = sum(w for _, w in sc.values())
         weighted = sum(v * w for v, w in sc.values()) / wsum
+        fmt2 = (lambda v: f"{v:.4f}") if EV else (lambda v: f"{v * 100:.1f}%")
         P += ["",
-              f"全{len(sc)}スポットの単純平均 {plain * 100:.1f}%",
-              f"到達するレンジ量で重み付けた平均 {weighted * 100:.1f}%",
+              f"全{len(sc)}スポットの単純平均 {fmt2(plain)}",
+              f"到達するレンジ量で重み付けた平均 {fmt2(weighted)}",
               "",
               "前者は40スポットを等しく数え、後者は実際に手が来る量で数える。滅多に座らない",
-              "スポットの取りこぼしは実戦の点にほとんど効かないので、後者の方が実感に近い。"]
+              "スポットは実戦にほとんど効かないので、後者の方が実感に近い。"]
         open(a.play_out, "w").write("\n".join(P) + "\n")
         print(f"{a.play_out}: {len(P)} lines")
 
@@ -469,6 +484,11 @@ if __name__ == '__main__':
     p.add_argument('--pattern', default='B', choices=sorted(pattern.THRESHOLDS),
                    help='how hard a board has to lean before it is called a shape: '
                         'A loose, B middling, C strict')
+    p.add_argument('--objective', default='score', choices=('score', 'ev'),
+                   help="what the play lines optimise. 'score' maximises what the "
+                        "app grades, which never looks at EV inside the strategy "
+                        "and so drops the overbets; 'ev' minimises what the choice "
+                        "costs, and needs an export carrying EV")
     p.add_argument('--depth', type=int, default=3,
                    help='how many conditions a rule may carry. A fourth is worth about\n'
                         'two tenths of a point and costs no lines, but is one more thing\n'
