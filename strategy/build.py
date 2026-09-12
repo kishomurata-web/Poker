@@ -13,7 +13,7 @@ A shared reading was measured against this and cost about half the resolution
 at the same number of classes, because what separates two boards in one spot
 often does not separate them in another.
 """
-import argparse, collections, os, sys
+import argparse, collections, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gto, preds, turnpred, tree, turntree, round10, pattern, maxscore
 
@@ -168,7 +168,8 @@ MERGED_HEAD = """40BB SRP 簡易GTO戦略 v2 統合版
 （index.html の tierFor / gtoScoreFor）。混ぜるほど点は下がるので、点を取りにいくなら
 「打つなら」の行だけを見ればよい。レンジがどう組まれているかを知りたいときに5つ組を見る。
 
-期待スコアは全40スポットの平均で93.8%。混ぜた場合は81.6%（フロップ）/71.6%（ターン）。
+「打つなら」の通りに打った場合の期待スコアは巻末の付録にある。混ぜた場合はそれより
+10〜20ポイント低い。
 
 """
 
@@ -273,12 +274,19 @@ def main(a):
         tspots[key[:3]].append((turnpred.Turn(key[3], key[4]), d))
 
     L = HEAD.split('\n')
+    ALLOC = json.load(open(a.alloc)) if a.alloc else {}
+    def rules_for(prefix, key, default):
+        """How many rules this spot earns. allocate.py decides it per spot when
+        the table is meant to be memorised; otherwise every spot gets the same."""
+        return ALLOC.get(prefix + '|' + '|'.join(key), default)
+
     t = pattern.THRESHOLDS[a.pattern]
     H = pattern.load(a.hands) if a.hands else {}
     TH = pattern.load(a.turn_hands) if a.turn_hands else {}
     fq, FLOPKEY, TURNKEY = {}, {}, {}
     for key, rows in fspots.items():
-        lv = tree.grow(rows, max_leaves=a.flop_rules, min_w=150, max_depth=3)
+        lv = tree.grow(rows, max_leaves=rules_for('F', key, a.flop_rules),
+                       min_w=150, max_depth=3)
         sh = shapes(lv, key, H, t, tree.label) if H else {}
         FLOPKEY[FLOPNAME[(key[0], key[2])]] = (key, lv)
         fq[FLOPNAME[(key[0], key[2])]] = (tree.fmt(lv), tree.stats(rows)[1], error(lv), sh)
@@ -296,7 +304,8 @@ def main(a):
             for node in ['turn_OOP', 'turn_IP']:
                 k = (pair, line, node)
                 if k not in tspots: continue
-                lv = turntree.grow(tspots[k], max_leaves=a.turn_rules, min_w=80, max_depth=3)
+                lv = turntree.grow(tspots[k], max_leaves=rules_for('T', k, a.turn_rules),
+                                   min_w=80, max_depth=3)
                 nm = turnname(*k)
                 TORDER.append(nm)
                 TURNKEY[nm] = (k, lv)
@@ -343,8 +352,8 @@ def main(a):
                 P.append(f"{rule}  [{n}]")
                 P += group_lines(gs)
                 P.append("")
-            sc[name] = sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / \
-                       sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
+            sw = sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
+            sc[name] = (sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / sw, sw)
         P += ["", "=========================  ターン  =========================", ""]
         for nm in TORDER:
             key, lv = TURNKEY[nm]
@@ -355,16 +364,23 @@ def main(a):
                 P.append(f"{rule}  [{n}]")
                 P += group_lines(gs)
                 P.append("")
-            sc[nm] = sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / \
-                     sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
+            sw = sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
+            sc[nm] = (sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / sw, sw)
         P += ["", "=========================  付録：期待スコア  =========================", "",
               "この表の通りに打った場合にアプリが付ける点の見込み。17区分の集計を真値として",
               "測っているので、同じ区分の中でハンドごとに答えが割れる分だけ実際は下振れする。",
               "正確な値にはコンボ単位のエクスポートが要る。", ""]
         for nm in [n for n in FORDER if n in sc] + [n for n in TORDER if n in sc]:
-            P.append(f"{nm:30s} {sc[nm] * 100:5.1f}%")
-        tot = sum(sc.values()) / len(sc)
-        P += ["", f"全{len(sc)}スポットの単純平均 {tot * 100:.1f}%"]
+            P.append(f"{nm:30s} {sc[nm][0] * 100:5.1f}%")
+        plain = sum(v for v, _ in sc.values()) / len(sc)
+        wsum = sum(w for _, w in sc.values())
+        weighted = sum(v * w for v, w in sc.values()) / wsum
+        P += ["",
+              f"全{len(sc)}スポットの単純平均 {plain * 100:.1f}%",
+              f"到達するレンジ量で重み付けた平均 {weighted * 100:.1f}%",
+              "",
+              "前者は40スポットを等しく数え、後者は実際に手が来る量で数える。滅多に座らない",
+              "スポットの取りこぼしは実戦の点にほとんど効かないので、後者の方が実感に近い。"]
         open(a.play_out, "w").write("\n".join(P) + "\n")
         print(f"{a.play_out}: {len(P)} lines")
 
@@ -378,7 +394,14 @@ def main(a):
                 key, lv = TURNKEY[nm]
                 for _, rule, _, gs in play_table(lv, key, HT, turntree.label, lambda w, c: c):
                     play[(nm, rule)] = gs
-            M = MERGED_HEAD.split("\n") + HEAD.split("\n")[1:]
+            M = MERGED_HEAD.split("\n")
+            if a.alloc:
+                M += ["■ この版について",
+                      "暗記用に、ルール数をスポットごとに配分しなおした版である。次の1ルールは、",
+                      "覚える行数あたりで最も点が伸びるスポットに渡してある。ボードの読み分けが",
+                      "点にならないスポットは1ルールのままで、その分をフロップの数スポットに寄せている。",
+                      ""]
+            M += HEAD.split("\n")[1:]
             for name in FORDER:
                 rules, m, _, sh = fq[name]
                 M.append(f"{name}    ベット率 {(1 - m['X']) * 100:.0f}%")
@@ -416,6 +439,8 @@ if __name__ == '__main__':
     p.add_argument('--pattern', default='B', choices=sorted(pattern.THRESHOLDS),
                    help='how hard a board has to lean before it is called a shape: '
                         'A loose, B middling, C strict')
+    p.add_argument('--alloc', help="allocate.py's per-spot rule counts, for a "
+                                   "table sized to be memorised")
     p.add_argument('--merged-out', default='40BB_SRP_all.txt',
                    help='both documents woven into one')
     p.add_argument('--play-out', default='40BB_SRP_play.txt',
