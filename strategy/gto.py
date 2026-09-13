@@ -18,8 +18,15 @@ TIER_LABEL = {'X': 'check', 'S': '~33%', 'M': '50%', 'L': '75%',
               'XL': '125%~', 'OB': '125%~ (overbet/all-in)'}
 
 def tier(code, frac):
-    if code == 'X':   return 'X'
-    if code == 'RAI': return 'OB'
+    """Which printed column an action falls in.
+
+    An all-in goes by its size like any other bet when the export priced it.
+    Older exports left it blank, and at 40BB treating it as an overbet was
+    right anyway - the stack behind those pots was three times them.
+    """
+    if code == 'X': return 'X'
+    if code == 'RAI' and frac in (None, ''): return 'OB'
+    if frac in (None, ''): return 'OB'
     f = float(frac)
     if f < 0.36:  return 'S'      # 10, 12, 15, 20, 25, 33%
     if f < 0.605: return 'M'      # 40, 50, 55%

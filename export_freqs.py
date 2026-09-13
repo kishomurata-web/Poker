@@ -57,11 +57,43 @@ def as_float(v):
         return 0.0
 
 
-def action_frac(code, pot):
-    """The bet as a share of the pot. None where there is no size to divide:
-    a check, and an all-in, whose absolute size the cache never carried."""
-    if code in ("X", "C", "F") or code == "RAI":
+# What sits in the pot that neither player put there: the antes, plus whichever
+# blinds folded. It is what lets an all-in be priced from the pot alone.
+DEAD = {
+    "UTG_vs_BB": 1.5, "BTN_vs_BB": 1.5,     # antes + the folded small blind
+    "UTG_vs_SB": 2.0, "BTN_vs_SB": 2.0,     # antes + the folded big blind
+    "UTG_vs_BTN": 2.5,                      # antes + both blinds
+    "SB_vs_BB": 1.0,                        # antes; neither blind folded
+}
+
+
+def allin_frac(pair, pot, stack):
+    """An all-in as a share of the pot.
+
+    The cache never carries the shove's size, and at 40BB filing it with the
+    overbets was harmless - the stack behind those pots was three times them.
+    At 20BB a line that reaches a pot of 19 leaves a shove of 11, which is 59%
+    of the pot and belongs four columns to the left.
+
+    Both players have put in the same amount at the nodes this is asked of -
+    each acts first or after a check - so what each has invested is the pot
+    less the dead money, halved.
+    """
+    pot = as_float(pot)
+    dead = DEAD.get(pair)
+    if not pot or dead is None or not stack:
         return None
+    behind = stack - (pot - dead) / 2.0
+    return round(behind / pot, 4) if behind > 0 else None
+
+
+def action_frac(code, pot, pair=None, stack=None):
+    """The bet as a share of the pot. None for a check, and for an all-in whose
+    size cannot be worked out because the seat matchup was not given."""
+    if code in ("X", "C", "F"):
+        return None
+    if code == "RAI":
+        return allin_frac(pair, pot, stack) if pair else None
     if code.startswith("R"):
         pot = as_float(pot)
         return round(float(code[1:]) / pot, 4) if pot else None
@@ -98,7 +130,7 @@ def wanted(value, allowed):
     return not allowed or value in allowed
 
 
-def rows_for_file(path, problems=None, lines=None, nodes=None):
+def rows_for_file(path, problems=None, lines=None, nodes=None, stack=None):
     """One (pair, board, line, node) group is one file, holding one record per
     card - a single "-" on the flop, and up to 48 turn cards otherwise.
 
@@ -132,7 +164,7 @@ def rows_for_file(path, problems=None, lines=None, nodes=None):
                 pot = as_float(rec.get("pot"))
                 out = []
                 for code, f in zip(rec["actions"], freqs):
-                    frac = action_frac(code, pot)
+                    frac = action_frac(code, pot, pair, stack)
                     out.append((pair, line, node, board, card, "%g" % pot,
                                 "%.1f" % combos, code,
                                 "" if frac is None else "%.4f" % frac, "%.6f" % f))
@@ -144,7 +176,7 @@ def rows_for_file(path, problems=None, lines=None, nodes=None):
                 yield row
 
 
-def export(cache, out, lines=None, nodes=None):
+def export(cache, out, lines=None, nodes=None, stack=None):
     files = sorted(glob.glob(os.path.join(cache, "*.jsonl")))
     if not files:
         sys.exit("no .jsonl files in %s" % cache)
@@ -159,7 +191,7 @@ def export(cache, out, lines=None, nodes=None):
     with opener(out, "wt", encoding="utf-8", newline="\n") as fh:
         fh.write("pair,line,node,board,card,pot,combos,code,frac,freq\n")
         for i, path in enumerate(files):
-            for row in rows_for_file(path, problems, lines, nodes):
+            for row in rows_for_file(path, problems, lines, nodes, stack):
                 fh.write(",".join(row) + "\n")
                 n_rows += 1
                 boards.add(row[3])
@@ -223,7 +255,9 @@ def selftest():
     trows = list(rows_for_file(turn))
     failures = []
 
+    ran = []
     def check(name, got, want):
+        ran.append(name)
         if got == want:
             print("  ok   %s" % name)
         else:
@@ -259,12 +293,19 @@ def selftest():
           len(list(rows_for_file(turn, None, set(), set()))), 4)
 
     # An all-in carries no size in the cache, so it must not be given one.
-    check("an all-in has no pot fraction", action_frac("RAI", "6.100"), None)
+    check("an all-in has no size without a seat matchup", action_frac("RAI", "6.100"), None)
+    check("but with one it is priced off the pot",
+          action_frac("RAI", "19.100", "BTN_vs_BB", 20), 0.5864)
+    check("the same shove at 40BB is an overbet",
+          action_frac("RAI", "10.100", "BTN_vs_BB", 40), 3.5347)
+    check("a seat matchup with no folded blind keeps more dead money out",
+          allin_frac("SB_vs_BB", "8.000", 40), 4.5625)
+    check("a pot past the stack prices nothing", allin_frac("BTN_vs_BB", "60.000", 20), None)
     check("a pot written as a string still divides",
           action_frac("R2", "6.100"), 0.3279)
     check("and a missing pot does not raise", action_frac("R2", None), None)
 
-    print("\n=== %d passed, %d failed ===" % (20 - len(failures), len(failures)))
+    print("\n=== %d passed, %d failed ===" % (len(ran) - len(failures), len(failures)))
     return 1 if failures else 0
 
 
@@ -278,6 +319,10 @@ def main():
     ap.add_argument("--nodes", default="",
                     help="comma-separated nodes to keep, e.g. turn_OOP,turn_IP. "
                          "Default: every node.")
+    ap.add_argument("--stack", type=float, default=40.0,
+                    help="effective stack in big blinds after antes are posted "
+                         "(40 for the 40BB solve, 20 for the 20BB one). It is what "
+                         "prices an all-in, whose size the cache does not carry.")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
     if args.selftest:
@@ -285,7 +330,7 @@ def main():
     if not args.cache:
         sys.exit("--cache is required (or --selftest)")
     split = lambda v: {x.strip() for x in v.split(",") if x.strip()}
-    export(args.cache, args.out, split(args.lines), split(args.nodes))
+    export(args.cache, args.out, split(args.lines), split(args.nodes), args.stack)
 
 
 if __name__ == "__main__":

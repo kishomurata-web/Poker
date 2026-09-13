@@ -48,11 +48,15 @@ COMBOS = 1326
 TIERS = ["check", "b33", "b50", "b75", "b125"]
 MAX_ACT = 10
 
-def tier_of(code, pot):
-    """The five columns the strategy table prints, by share of pot."""
+def tier_of(code, pot, pair=None, stack=None):
+    """The five columns the strategy table prints, by share of pot.
+
+    An all-in is priced from the pot rather than assumed to be large: at 20BB
+    the shove into a late-street pot can be 59% of it, which is not the column
+    the overbets live in.
+    """
     if code == "X": return 0
-    if code == "RAI": return 4
-    f = action_frac(code, pot)
+    f = action_frac(code, pot, pair, stack)
     if f is None: return 4
     if f < 0.36:  return 1
     if f < 0.605: return 2
@@ -70,7 +74,7 @@ def ev_loss(evs, n):
     return [[best[h] - evs[a * COMBOS + h] for h in range(COMBOS)] for a in range(n)]
 
 
-def by_bucket(rec, board):
+def by_bucket(rec, board, pair=None, stack=None):
     """[(bucket, combos, [5 tier frequencies])] for one decision."""
     actions = rec["actions"]
     n = len(actions)
@@ -83,7 +87,7 @@ def by_bucket(rec, board):
                          % (len(strat), len(reach), n * COMBOS, COMBOS))
     table = HB.table(board)
     pot = rec.get("pot")
-    slot = [tier_of(a, pot) for a in actions]
+    slot = [tier_of(a, pot, pair, stack) for a in actions]
     nb = len(HB.BUCKETS)
     got = [0.0] * nb
     mix = [[0.0] * 5 for _ in range(nb)]
@@ -116,7 +120,7 @@ def trim(v, places):
     return 0 if v == 0 else v
 
 
-def rows_for_file(path, problems, lines, nodes, keep_empty=False, pairs=None):
+def rows_for_file(path, problems, lines, nodes, keep_empty=False, pairs=None, stack=None):
     name = os.path.basename(path)[: -len(".jsonl")]
     parts = name.split("__")
     if len(parts) != 4: return
@@ -133,7 +137,7 @@ def rows_for_file(path, problems, lines, nodes, keep_empty=False, pairs=None):
                 card = rec.get("card") or "-"
                 cards = flop + ([card] if card != "-" else [])
                 menu = "|".join(rec["actions"])
-                for bucket, combos, share, mix, freqs, losses in by_bucket(rec, cards):
+                for bucket, combos, share, mix, freqs, losses in by_bucket(rec, cards, pair, stack):
                     if mix is None and not keep_empty: continue
                     cols = ["", "", "", "", ""] if mix is None else \
                            [round(v, 4) for v in mix]
@@ -150,7 +154,7 @@ def rows_for_file(path, problems, lines, nodes, keep_empty=False, pairs=None):
             except Exception as exc:                      # noqa: BLE001
                 problems.append("%s line %d: %s" % (os.path.basename(path), n, exc))
 
-def export(cache, out, lines, nodes, keep_empty=False, pairs=None):
+def export(cache, out, lines, nodes, keep_empty=False, pairs=None, stack=None):
     files = sorted(glob.glob(os.path.join(cache, "*.jsonl")))
     if not files: sys.exit("no .jsonl files under %s" % cache)
     problems, written = [], 0
@@ -161,7 +165,7 @@ def export(cache, out, lines, nodes, keep_empty=False, pairs=None):
                    [f"f{i}" for i in range(1, MAX_ACT + 1)] +
                    [f"l{i}" for i in range(1, MAX_ACT + 1)])
         for i, p in enumerate(files, 1):
-            for row in rows_for_file(p, problems, lines, nodes, keep_empty, pairs):
+            for row in rows_for_file(p, problems, lines, nodes, keep_empty, pairs, stack):
                 w.writerow(row); written += 1
             if i % 500 == 0:
                 print("  %d/%d files, %d rows" % (i, len(files), written), flush=True)
@@ -173,7 +177,9 @@ def export(cache, out, lines, nodes, keep_empty=False, pairs=None):
 def selftest():
     import base64, struct, zlib
     fails = []
+    ran = []
     def check(name, got, want):
+        ran.append(name)
         if got == want: print("  ok   %s" % name)
         else: fails.append(name); print("  FAIL %s\n        got %r want %r" % (name, got, want))
 
@@ -230,7 +236,11 @@ def selftest():
     check("a half-pot bet lands in 50%", tier_of("R3.05", "6.100"), 2)
     check("a pot-sized bet lands in 75%", tier_of("R6.1", "6.100"), 3)
     check("an overbet lands in 125%~", tier_of("R9", "6.100"), 4)
-    check("an all-in lands in 125%~", tier_of("RAI", "6.100"), 4)
+    check("an all-in with no matchup falls back to 125%~", tier_of("RAI", "6.100"), 4)
+    check("a 20BB shove into a late pot lands in 50%",
+          tier_of("RAI", "19.100", "BTN_vs_BB", 20), 2)
+    check("the same shove at 40BB is still 125%~",
+          tier_of("RAI", "10.100", "BTN_vs_BB", 40), 4)
     check("a check is a check", tier_of("X", "6.100"), 0)
 
     # End to end, through a real file on disk, because every failure so far has
@@ -261,7 +271,7 @@ def selftest():
         check("its EV loss sits under the same menu", top[24:26], [2.0, 0.0])
         check("air gives up nothing by checking", air[24:26], [0.0, 1.0])
 
-    print("\n=== %d passed, %d failed ===" % (27 - len(fails), len(fails)))
+    print("\n=== %d passed, %d failed ===" % (len(ran) - len(fails), len(fails)))
     return 1 if fails else 0
 
 def main():
@@ -276,12 +286,15 @@ def main():
                          "whole thing will not travel.")
     ap.add_argument("--all-buckets", action="store_true",
                     help="also write the buckets the range never holds here")
+    ap.add_argument("--stack", type=float, default=40.0,
+                    help="effective stack in big blinds after antes are posted; "
+                         "it is what prices an all-in")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest: sys.exit(selftest())
     if not a.cache: sys.exit("--cache is required (or --selftest)")
     sp = lambda v: {x.strip() for x in v.split(",") if x.strip()}
-    export(a.cache, a.out, sp(a.lines), sp(a.nodes), a.all_buckets, sp(a.pairs))
+    export(a.cache, a.out, sp(a.lines), sp(a.nodes), a.all_buckets, sp(a.pairs), a.stack)
 
 if __name__ == "__main__":
     main()
