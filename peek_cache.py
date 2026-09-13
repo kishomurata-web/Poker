@@ -21,6 +21,8 @@ def peek(cache):
         sys.exit("no .jsonl files under %s" % cache)
 
     pairs, lines, nodes, boards = (collections.Counter() for _ in range(4))
+    grid = collections.Counter()          # (pair, line) -> files
+    spots = collections.Counter()         # (pair, line, node) -> boards
     odd = []
     for p in files:
         name = os.path.basename(p)[: -len(".jsonl")]
@@ -33,6 +35,8 @@ def peek(cache):
         lines[line] += 1
         nodes[node] += 1
         boards[board] += 1
+        grid[(pair, line)] += 1
+        spots[(pair, line, node)] += 1
 
     print("files            %d" % len(files))
     print("distinct boards  %d" % len(boards))
@@ -42,6 +46,34 @@ def peek(cache):
         print("\n%s (%d)" % (title, len(c)))
         for k, v in sorted(c.items()):
             print("    %-12s %5d files" % (k, v))
+
+    # A line that exists in the cache but only for some pairs is the failure
+    # the totals above hide: the export names one filter for every pair, and
+    # the pairs that do not carry that line come out empty without a word.
+    # Only the lines that are not there for everyone are worth the space.
+    print("\npairs x lines   (files; '-' means the pair does not have that line)")
+    ps = sorted(pairs)
+    partial = [ln for ln in sorted(lines)
+               if sum(1 for pr in ps if grid[(pr, ln)]) not in (0, len(ps))]
+    whole = [ln for ln in sorted(lines) if ln not in partial]
+    if whole:
+        print("    every pair has: %s" % ", ".join(whole))
+    if not partial:
+        print("    no line is missing for only some pairs")
+    else:
+        print("    %-12s %s" % ("", "  ".join("%10s" % p for p in ps)))
+        for ln in partial:
+            print("    %-12s %s" % (ln, "  ".join(
+                "%10s" % (grid[(pr, ln)] or "-") for pr in ps)))
+
+    # What an export asking for these lines would actually produce, spot by
+    # spot. This is the number to compare against the CSV afterwards.
+    print("\nturn spots that exist   (pair, line, node -> boards)")
+    tn = sorted({k for k in spots if k[2].startswith("turn_") and "_vs" not in k[2]})
+    if not tn:
+        print("    none - this cache holds no turn nodes")
+    for pr, ln, nd in tn:
+        print("    %-12s %-12s %-10s %5d" % (pr, ln, nd, spots[(pr, ln, nd)]))
 
     # One record per (line, node) is enough to see the menu, which is what
     # decides how the sizes fold into the table's five columns.
