@@ -337,22 +337,29 @@ def main(a):
     TH = pattern.load(a.turn_hands) if a.turn_hands else {}
     # --tree-from cuts the boards on one depth's strategies and fills the
     # classes with this one's, so the board reading is learned once.
+    # A spot the reference depth did not collect is cut on its own boards
+    # instead. Reaching into a defaultdict for it would hand grow() an empty
+    # reference and produce a spot with no boards at all, which is worse than
+    # learning that spot's conditions twice.
     rspots = tspots_ref = None
+    borrowed = []
     if a.tree_from:
-        rspots = collections.defaultdict(list)
+        rspots = {}
         for key, d in gto.read(a.tree_from):
-            rspots[key[:3]].append((F[key[3]], d))
+            rspots.setdefault(key[:3], []).append((F[key[3]], d))
     if a.turn_tree_from:
-        tspots_ref = collections.defaultdict(list)
+        tspots_ref = {}
         for key, d in gto.read(a.turn_tree_from):
-            tspots_ref[key[:3]].append((turnpred.Turn(key[3], key[4]), d))
+            tspots_ref.setdefault(key[:3], []).append((turnpred.Turn(key[3], key[4]), d))
 
     fq, FLOPKEY, TURNKEY = {}, {}, {}
     for key, rows in fspots.items():
-        lv = tree.grow(rspots[key] if rspots else rows,
+        ref = rspots.get(key) if rspots else None
+        if rspots and ref is None: borrowed.append(('フロップ', key))
+        lv = tree.grow(ref or rows,
                        max_leaves=rules_for('F', key, a.flop_rules),
                        min_w=150, max_depth=a.depth)
-        if rspots: lv = refit(lv, rows)
+        if ref: lv = refit(lv, rows)
         sh = shapes(lv, key, H, t, tree.label) if H else {}
         FLOPKEY[FLOPNAME[(key[0], key[2])]] = (key, lv)
         fq[FLOPNAME[(key[0], key[2])]] = (tree.fmt(lv), tree.stats(rows)[1], error(lv), sh)
@@ -370,10 +377,12 @@ def main(a):
             for node in ['turn_OOP', 'turn_IP']:
                 k = (pair, line, node)
                 if k not in tspots: continue
-                lv = turntree.grow(tspots_ref[k] if tspots_ref else tspots[k],
+                ref = tspots_ref.get(k) if tspots_ref else None
+                if tspots_ref and ref is None: borrowed.append(('ターン', k))
+                lv = turntree.grow(ref or tspots[k],
                                    max_leaves=rules_for('T', k, a.turn_rules),
                                    min_w=80, max_depth=a.depth)
-                if tspots_ref: lv = refit(lv, tspots[k])
+                if ref: lv = refit(lv, tspots[k])
                 nm = turnname(*k)
                 TORDER.append(nm)
                 TURNKEY[nm] = (k, lv)
@@ -557,6 +566,11 @@ def main(a):
             open(a.merged_out, "w").write("\n".join(M) + "\n")
             print(f"{a.merged_out}: {len(M)} lines")
     print(f"{a.out}: {len(L)} lines, {len(FORDER)} flop spots, {len(TORDER)} turn spots")
+    if borrowed:
+        print("these spots were cut on their own boards - the reference depth "
+              "did not collect them, so their conditions are learned separately:")
+        for street, k in borrowed:
+            print(f"  {street}  {'  '.join(k)}")
     # [N] counts the real flops a rule covers, so a spot whose sweep did not
     # finish adds up short. That is worth saying rather than asserting away -
     # the table is still usable, it just describes slightly fewer boards.
@@ -579,7 +593,7 @@ if __name__ == '__main__':
     p.add_argument('--flop', default='flop40.csv.gz')
     p.add_argument('--turn', default='turn40.csv.gz',
                    help='omit with --turn "" for a flop-only table')
-    p.add_argument('--out', default='40BB_SRP_v2.txt')
+    p.add_argument('--out')
     p.add_argument('--hands', default='hands40.csv.gz',
                    help="export_hands.py's output; without it the shape column is left off")
     p.add_argument('--turn-hands', default='turnhands40.csv.gz',
@@ -603,15 +617,21 @@ if __name__ == '__main__':
                         'to check at the table')
     p.add_argument('--alloc', help="allocate.py's per-spot rule counts, for a "
                                    "table sized to be memorised")
-    p.add_argument('--json-out', default='40BB_SRP.json',
+    p.add_argument('--json-out',
                    help='the same table as structured data, for the drill app')
-    p.add_argument('--merged-out', default='40BB_SRP_all.txt',
+    p.add_argument('--merged-out',
                    help='both documents woven into one')
-    p.add_argument('--play-out', default='40BB_SRP_play.txt',
+    p.add_argument('--play-out',
                    help='where to write the score-maximising action table')
     p.add_argument('--flop-rules', type=int, default=10)
     p.add_argument('--turn-rules', type=int, default=6)
     args = p.parse_args()
+    # The output names carry the depth, so a 20BB run cannot land on the 40BB
+    # files by leaving a flag off. They used to default to the 40BB names,
+    # which quietly overwrote that table whenever another depth was built.
+    for f, suffix in (('out', '_SRP_v2.txt'), ('json_out', '_SRP.json'),
+                      ('merged_out', '_SRP_all.txt'), ('play_out', '_SRP_play.txt')):
+        if getattr(args, f) is None: setattr(args, f, args.label + suffix)
     for f in ('hands', 'turn_hands'):
         if getattr(args, f) and not os.path.exists(getattr(args, f)): setattr(args, f, None)
     main(args)

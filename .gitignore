@@ -12,3 +12,11 @@ postflop/
 # Bytecode for strategy/, written whenever build.py runs.
 __pycache__/
 *.pyc
+
+# What export_freqs.py and export_hands.py read out of the collector's cache,
+# and what build.py then reads. Tens of megabytes per stack depth, and the
+# cache on the PC is the real source - these are rebuilt from it, not edited.
+flop*.csv.gz
+turn*.csv.gz
+hands*.csv.gz
+turnhands*.csv.gz
