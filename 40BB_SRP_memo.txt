@@ -725,55 +725,57 @@ sb vs bb x-~33-c-x-bbアクション           2   19.1pt      8.4pt
 これは1755ボードを10クラス前後に畳んだことの代償で、クラスを増やせば下がるが、
 同じ10クラスなら他の切り方でこれ以上は下がらない水準まで詰めてある。
 
-=========================  付録：期待スコア  =========================
+=========================  付録：この表の成績  =========================
 
-この表の通りに打った場合にアプリが付ける点の見込み。17区分の集計を真値として
-測っているので、同じ区分の中でハンドごとに答えが割れる分だけ実際は下振れする。
-正確な値にはコンボ単位のエクスポートが要る。
+平均EVロス：各ハンドにとっての最善手と比べて失うEV。単位はソリューションと同じ
+（チップEVならbb）。0に近いほどよい。
+期待スコア：アプリが付ける点の見込み。EVを持たないエクスポートのスポットはこちら。
+いずれも17区分の集計で測っているので、同じ区分の中でハンドごとに最善手が割れる
+分だけ実際はこれより不利に出る。
 
-utg vs bb utg c-bet             83.2%
+── 期待スコア（40スポット）
+utg vs bb utg c-bet            83.2%
 utg vs bb bb donk bet          100.0%
-utg vs btn utg c-bet            95.3%
-utg vs btn btn BMCB             97.5%
-utg vs sb utg c-bet             88.5%
-utg vs sb sb donk bet           99.9%
-btn vs bb btn c-bet             88.2%
+utg vs btn utg c-bet           95.3%
+utg vs btn btn BMCB            97.5%
+utg vs sb utg c-bet            88.5%
+utg vs sb sb donk bet          99.9%
+btn vs bb btn c-bet            88.2%
 btn vs bb bb donk bet          100.0%
-btn vs sb btn c-bet             95.0%
-btn vs sb sb donk bet           99.2%
-sb vs bb sb c-bet               92.5%
-sb vs bb bb BMCB                97.0%
-utg vs bb x-x-bbアクション           94.0%
-utg vs bb x-x-x-utgアクション        92.0%
-utg vs bb x-~33-c-bbアクション       93.6%
-utg vs bb x-~33-c-x-utgアクション    79.7%
-utg vs btn x-x-utgアクション         94.5%
-utg vs btn x-x-x-btnアクション       94.2%
-utg vs btn ~33-c-utgアクション       89.7%
-utg vs btn ~33-c-x-btnアクション     91.1%
-utg vs btn x-~33-c-utgアクション     98.9%
-utg vs btn x-~33-c-x-btnアクション   81.5%
-utg vs sb x-x-sbアクション           92.9%
-utg vs sb x-x-x-utgアクション        93.7%
-utg vs sb x-~33-c-sbアクション       98.3%
-utg vs sb x-~33-c-x-utgアクション    81.2%
-btn vs bb x-x-bbアクション           93.6%
-btn vs bb x-x-x-btnアクション        90.2%
-btn vs bb x-~33-c-bbアクション       96.2%
-btn vs bb x-~33-c-x-btnアクション    87.2%
-btn vs sb x-x-sbアクション           91.9%
-btn vs sb x-x-x-btnアクション        93.4%
-btn vs sb x-~33-c-sbアクション       99.4%
-btn vs sb x-~33-c-x-btnアクション    85.8%
-sb vs bb x-x-sbアクション            94.2%
-sb vs bb x-x-x-bbアクション          94.5%
-sb vs bb ~33-c-sbアクション          86.6%
-sb vs bb ~33-c-x-bbアクション        91.9%
-sb vs bb x-~33-c-sbアクション        98.7%
-sb vs bb x-~33-c-x-bbアクション      85.1%
+btn vs sb btn c-bet            95.0%
+btn vs sb sb donk bet          99.2%
+sb vs bb sb c-bet              92.5%
+sb vs bb bb BMCB               97.0%
+utg vs bb x-x-bbアクション          94.0%
+utg vs bb x-x-x-utgアクション       92.0%
+utg vs bb x-~33-c-bbアクション      93.6%
+utg vs bb x-~33-c-x-utgアクション   79.7%
+utg vs btn x-x-utgアクション        94.5%
+utg vs btn x-x-x-btnアクション      94.2%
+utg vs btn ~33-c-utgアクション      89.7%
+utg vs btn ~33-c-x-btnアクション    91.1%
+utg vs btn x-~33-c-utgアクション    98.9%
+utg vs btn x-~33-c-x-btnアクション  81.5%
+utg vs sb x-x-sbアクション          92.9%
+utg vs sb x-x-x-utgアクション       93.7%
+utg vs sb x-~33-c-sbアクション      98.3%
+utg vs sb x-~33-c-x-utgアクション   81.2%
+btn vs bb x-x-bbアクション          93.6%
+btn vs bb x-x-x-btnアクション       90.2%
+btn vs bb x-~33-c-bbアクション      96.2%
+btn vs bb x-~33-c-x-btnアクション   87.2%
+btn vs sb x-x-sbアクション          91.9%
+btn vs sb x-x-x-btnアクション       93.4%
+btn vs sb x-~33-c-sbアクション      99.4%
+btn vs sb x-~33-c-x-btnアクション   85.8%
+sb vs bb x-x-sbアクション           94.2%
+sb vs bb x-x-x-bbアクション         94.5%
+sb vs bb ~33-c-sbアクション         86.6%
+sb vs bb ~33-c-x-bbアクション       91.9%
+sb vs bb x-~33-c-sbアクション       98.7%
+sb vs bb x-~33-c-x-bbアクション     85.1%
 
-全40スポットの単純平均 92.5%
-到達するレンジ量で重み付けた平均 94.8%
+   単純平均 92.5%   到達レンジ量で重み付け 94.8%
 
-前者は40スポットを等しく数え、後者は実際に手が来る量で数える。滅多に座らない
+前者は各スポットを等しく数え、後者は実際に手が来る量で数える。滅多に座らない
 スポットは実戦にほとんど効かないので、後者の方が実感に近い。

@@ -389,7 +389,8 @@ def main(a):
                 P += group_lines(gs)
                 P.append("")
             sw = sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
-            sc[name] = (sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / sw, sw)
+            sc[name] = (sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / sw,
+                        sw, FA == 'ev')
         P += ["", "=========================  ターン  =========================", ""]
         for nm in TORDER:
             key, lv = TURNKEY[nm]
@@ -401,30 +402,31 @@ def main(a):
                 P += group_lines(gs)
                 P.append("")
             sw = sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
-            sc[nm] = (sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / sw, sw)
-        if EV:
-            P += ["", "=========================  付録：平均EVロス  =========================", "",
-                  "この表の通りに打った場合に、各ハンドにとっての最善手と比べて失うEV。",
-                  "ソリューションの単位（チップEVならbb）。0に近いほどよい。",
-                  "17区分の集計で測っているので、同じ区分の中でハンドごとに最善手が割れる分だけ",
-                  "実際は大きくなる。", ""]
-        else:
-            P += ["", "=========================  付録：期待スコア  =========================", "",
-                  "この表の通りに打った場合にアプリが付ける点の見込み。17区分の集計を真値として",
-                  "測っているので、同じ区分の中でハンドごとに答えが割れる分だけ実際は下振れする。",
-                  "正確な値にはコンボ単位のエクスポートが要る。", ""]
-        for nm in [n for n in FORDER if n in sc] + [n for n in TORDER if n in sc]:
-            P.append(f"{nm:30s} {sc[nm][0]:7.4f}" if EV
-                     else f"{nm:30s} {sc[nm][0] * 100:5.1f}%")
-        plain = sum(v for v, _ in sc.values()) / len(sc)
-        wsum = sum(w for _, w in sc.values())
-        weighted = sum(v * w for v, w in sc.values()) / wsum
-        fmt2 = (lambda v: f"{v:.4f}") if EV else (lambda v: f"{v * 100:.1f}%")
-        P += ["",
-              f"全{len(sc)}スポットの単純平均 {fmt2(plain)}",
-              f"到達するレンジ量で重み付けた平均 {fmt2(weighted)}",
-              "",
-              "前者は40スポットを等しく数え、後者は実際に手が来る量で数える。滅多に座らない",
+            sc[nm] = (sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / sw,
+                      sw, TA_ == 'ev')
+        P += ["", "=========================  付録：この表の成績  =========================", "",
+              "平均EVロス：各ハンドにとっての最善手と比べて失うEV。単位はソリューションと同じ",
+              "（チップEVならbb）。0に近いほどよい。",
+              "期待スコア：アプリが付ける点の見込み。EVを持たないエクスポートのスポットはこちら。",
+              "いずれも17区分の集計で測っているので、同じ区分の中でハンドごとに最善手が割れる",
+              "分だけ実際はこれより不利に出る。", ""]
+        # EV given up and the app's score are different quantities in different
+        # units, and an export that carries EV for one street and not the other
+        # leaves both in play. They are never averaged together.
+        for by_ev, what in ((True, '平均EVロス'), (False, '期待スコア')):
+            part = {n: sc[n] for n in
+                    [x for x in FORDER if x in sc] + [x for x in TORDER if x in sc]
+                    if sc[n][2] == by_ev}
+            if not part: continue
+            fmt2 = (lambda v: f"{v:.4f}") if by_ev else (lambda v: f"{v * 100:.1f}%")
+            P.append(f"── {what}（{len(part)}スポット）")
+            for nm in part:
+                P.append(f"{nm:30s} {fmt2(part[nm][0])}")
+            plain = sum(v for v, _, _ in part.values()) / len(part)
+            wsum = sum(w for _, w, _ in part.values())
+            weighted = sum(v * w for v, w, _ in part.values()) / wsum
+            P += ["", f"   単純平均 {fmt2(plain)}   到達レンジ量で重み付け {fmt2(weighted)}", ""]
+        P += ["前者は各スポットを等しく数え、後者は実際に手が来る量で数える。滅多に座らない",
               "スポットは実戦にほとんど効かないので、後者の方が実感に近い。"]
         open(a.play_out, "w").write("\n".join(P) + "\n")
         print(f"{a.play_out}: {len(P)} lines")
@@ -461,10 +463,8 @@ def main(a):
                     M += rule_block(rule, v, n, sh.get(rule, ('', '', [])),
                                     play.get((nm, rule))) + [""]
             M += L[L.index("=========================  付録：精度  ========================="):]
-            M += ["", "=========================  付録：平均EVロス  =========================" if EV
-                  else "=========================  付録：期待スコア  ========================="]
-            head = "=========================  付録：平均EVロス  =========================" \
-                if EV else "=========================  付録：期待スコア  ========================="
+            M += ["", "=========================  付録：この表の成績  ========================="]
+            head = "=========================  付録：この表の成績  ========================="
             M += P[P.index(head) + 1:]
             open(a.merged_out, "w").write("\n".join(M) + "\n")
             print(f"{a.merged_out}: {len(M)} lines")
