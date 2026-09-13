@@ -153,15 +153,24 @@ h1{
 }
 .bands{font-family:var(--mono); font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums}
 
-/* play lines */
-.play{display:flex; flex-direction:column; gap:9px}
-.line{display:grid; grid-template-columns:66px 1fr; gap:11px; align-items:start}
+/* play lines - one row per hand class, strongest at the top, the way the
+   study app lists them. Each class takes exactly one action here, so the bar
+   is a single band and its length carries nothing; it is there to be scanned
+   down the column, which is what makes the size changes jump out. Ragged bar
+   lengths would break that scan, so every bar is full width. */
+.play{display:flex; flex-direction:column; gap:3px}
+.line{display:grid; grid-template-columns:7.6em 1fr 4.2em; gap:8px; align-items:center}
+.bk{font-size:12px; line-height:1.45; color:var(--text)}
+.pbar{height:12px; border-radius:3px; background:var(--sunk); overflow:hidden}
+.pbar span{display:block; height:100%; width:100%}
 .act{
-  font-family:var(--mono); font-size:13.5px; font-weight:600; text-align:right;
-  padding-top:1px; font-variant-numeric:tabular-nums;
+  font-family:var(--mono); font-size:11.5px; font-weight:600;
+  font-variant-numeric:tabular-nums; color:var(--muted); white-space:nowrap;
 }
-.bk{font-size:13px; line-height:1.55; color:var(--text)}
-.bk em{font-style:normal; color:var(--faint); font-family:var(--mono); font-size:11px; margin-left:5px}
+@media (max-width:470px){
+  .line{grid-template-columns:6.6em 1fr 3.8em; gap:6px}
+  .bk{font-size:11px}
+}
 
 /* grading — the thumb has to reach this without scrolling the answer away,
    so it rides the bottom of the viewport once the answer is longer than it */
@@ -485,11 +494,38 @@ function freqHTML(v){
      <div class="k"><i class="swatch" style="background:var(${SLOT_VAR[i]})"></i>${esc(SLOTS[i])}</div></div>`).join('');
   return `<div class="freqbar">${bar}</div><div class="freqnums">${nums}</div>`;
 }
+/* An action named as a share of the pot lands in one of the five columns, and
+   takes that column's colour. All-in keeps the main app's purple: there it is
+   its own action rather than a point on the size ramp, and the table's 125%~
+   column holds both. */
+const ALLIN_COLOR = '#7d3a9e';
+function actColor(act){
+  if (/all|オールイン/i.test(act)) return ALLIN_COLOR;
+  const pct = parseFloat(act);
+  if (!isFinite(pct)) return 'var(--act-x)';          // check
+  if (pct <= 35) return 'var(--act-1)';
+  if (pct <= 60) return 'var(--act-2)';
+  if (pct <= 110) return 'var(--act-3)';
+  return 'var(--act-4)';
+}
+
 function playHTML(rule){
   if (!rule.play.length) return '<p style="color:var(--faint);font-size:13px;margin:0">—</p>';
-  return '<div class="play">' + rule.play.map(g =>
-    `<div class="line"><div class="act">${esc(g.act)}</div>
-     <div class="bk">${esc(g.buckets.join('、'))}<em>${Math.round(g.share*100)}%</em></div></div>`).join('') + '</div>';
+  // The table assigns an action to a class, so invert it: the reader holds a
+  // hand and wants its row, not the list of classes that share an action.
+  const act = {};
+  for (const g of rule.play) for (const b of g.buckets) act[b] = g.act;
+  const rows = DATA.buckets.filter(b => b in act);
+  if (!rows.length) return '<p style="color:var(--faint);font-size:13px;margin:0">—</p>';
+  // No rule marking where the action changes: it changes on a quarter of the
+  // rows, so the rules read as noise over the colour they are meant to frame.
+  return '<div class="play">' + rows.map(b => {
+    const a = act[b];
+    return `<div class="line">
+      <div class="bk">${esc(b)}</div>
+      <div class="pbar"><span style="background:${actColor(a)}"></span></div>
+      <div class="act">${esc(a)}</div></div>`;
+  }).join('') + '</div>';
 }
 function boardHTML(cards, street){
   return '<div class="board">' + cards.map((c,i) => {
