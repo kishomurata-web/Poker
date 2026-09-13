@@ -86,6 +86,30 @@ def peek(cache):
             print("    %-10s %-12s unreadable: %s" % (parts[2], parts[3], exc))
             seen.add(key)
 
+    # An all-in's own size is not in the actions list, so whether it can be
+    # priced against the pot depends on what else the record carries. At 40BB
+    # filing it with the overbets was safe; at 20BB a pot near the starting
+    # stack leaves an all-in that may be under half of it.
+    print("\nfields on one record")
+    for p in files[:1]:
+        try:
+            with open(p, encoding="utf-8") as fh:
+                for raw in fh:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    rec = json.loads(raw)
+                    for k in sorted(rec):
+                        v = rec[k]
+                        if isinstance(v, str) and len(v) > 40:
+                            show = "<%d chars>" % len(v)
+                        else:
+                            show = repr(v)[:70]
+                        print("    %-14s %s" % (k, show))
+                    break
+        except Exception as exc:                              # noqa: BLE001
+            print("    unreadable: %s" % exc)
+
     print("\nsuggested filters")
     print("  --lines %s" % ",".join(sorted(lines)))
     print("  --nodes %s" % ",".join(sorted(nodes)))
