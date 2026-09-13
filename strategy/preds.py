@@ -23,8 +23,16 @@ def in_one_window(rs):
     return any(s <= w for w in WINDOWS)
 
 def sd(x, y):
-    """Two ranks that can both sit inside one five-window."""
-    return any({x, y} <= w for w in WINDOWS)
+    """Two *different* ranks that can both sit inside one five-window.
+
+    Equal ranks are not a straight connection - a pair contributes one rank to
+    a straight, not two - and passing them as a set would silently collapse to
+    a single element that every window containing it holds. That made HM
+    vacuously true on a board paired at the top, and ML on one paired at the
+    bottom, so "HM,MLSD" could be printed for a paired board where one half of
+    it means nothing.
+    """
+    return x != y and any({x, y} <= w for w in WINDOWS)
 
 class Flop:
     def __init__(self, board, weight):
@@ -67,7 +75,10 @@ class Flop:
         wc = [x for x in self.r if x == A or x <= RV['5']]
         return len(wc) >= 2 and all(x <= RV['9'] for x in self.r if x != A)
     @property
-    def wheel_made(self):  return self.wheel and self.hi == A and in_one_window(self.r)
+    def wheel_made(self):
+        # straight_made's wheel half, and paired for the same reason: three to
+        # a straight needs three ranks, and A22 is two.
+        return self.wheel and self.hi == A and self.straight_made
     # --- counts ---
     @property
     def nT(self):       return sum(1 for x in self.r if x >= RV['T'])
