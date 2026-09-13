@@ -46,7 +46,7 @@ body{
   font-family:var(--ui); font-size:15px; line-height:1.6;
   -webkit-text-size-adjust:100%;
 }
-.wrap{max-width:640px; margin:0 auto; padding-inline:18px; padding-block:22px 64px}
+.wrap{max-width:640px; margin:0 auto; padding-inline:18px; padding-block:22px 104px}
 
 /* ---- instrument bar ---- */
 header{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:14px}
@@ -68,10 +68,17 @@ h1{
 .stages button[aria-selected="true"] b{color:var(--brass)}
 .stages button:hover:not([aria-selected="true"]){background:var(--sunk)}
 
-.filters{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px}
+/* One rail rather than three wrapped rows: on a phone the filters were
+   holding back the question by a third of the screen. */
+.filters{
+  display:flex; gap:6px; margin-bottom:14px; overflow-x:auto; scrollbar-width:none;
+  margin-inline:-18px; padding-inline:18px; padding-block:1px;
+}
+.filters::-webkit-scrollbar{display:none}
 .chip{
   appearance:none; border:1px solid var(--line); background:var(--card); color:var(--muted);
-  font-family:var(--mono); font-size:11.5px; padding:4px 9px; border-radius:20px; cursor:pointer;
+  font-family:var(--mono); font-size:11.5px; padding:5px 10px; border-radius:20px; cursor:pointer;
+  white-space:nowrap; flex:0 0 auto;
 }
 .chip[aria-pressed="true"]{border-color:var(--brass); color:var(--brass); background:var(--brass-soft)}
 
@@ -145,12 +152,20 @@ h1{
 .bk{font-size:13px; line-height:1.55; color:var(--text)}
 .bk em{font-style:normal; color:var(--faint); font-family:var(--mono); font-size:11px; margin-left:5px}
 
-/* grading */
+/* grading — the thumb has to reach this without scrolling the answer away,
+   so it rides the bottom of the viewport once the answer is longer than it */
+.actions{
+  position:fixed; left:0; right:0; bottom:0; z-index:5;
+  padding:14px 18px calc(14px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(to top, var(--paper) 72%, transparent);
+}
+.actions > *{max-width:604px; margin-inline:auto}
 .grade{display:grid; grid-template-columns:1fr 1fr; gap:9px}
 .grade button, .reveal{
   appearance:none; border:1px solid var(--line); border-radius:8px; cursor:pointer;
   font-family:var(--ui); font-size:14px; font-weight:600; padding:13px 10px;
-  background:var(--card); color:var(--text);
+  background:var(--card); color:var(--text); min-height:46px;
+  -webkit-tap-highlight-color:transparent;
 }
 .reveal{width:100%; border-color:var(--brass); color:var(--brass); background:var(--brass-soft)}
 .grade .no{border-color:var(--again); color:var(--again); background:var(--again-soft)}
@@ -186,12 +201,18 @@ button:focus-visible{outline:2px solid var(--brass); outline-offset:2px}
 .foot{margin-top:26px; font-size:11.5px; color:var(--faint); line-height:1.7}
 .foot code{font-family:var(--mono); font-size:11px}
 @media (max-width:470px){
+  .wrap{padding-block:16px 100px}
   .line{grid-template-columns:58px 1fr; gap:9px}
   .freqnums .v{font-size:15px}
   .freqnums .k{font-size:9px}
-  .stages button{font-size:11px; padding:8px 2px}
+  .stages button{font-size:11px; padding:9px 2px; min-height:46px}
   .stages button b{font-size:9.5px; letter-spacing:.03em}
+  .chip{padding:7px 12px; font-size:12px}
+  .q, .a{padding:16px 14px}
+  .foot{margin-top:18px}
 }
+/* A pointer that cannot hover is a finger: the keyboard shortcuts are noise */
+@media (hover:none){ kbd{display:none} }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -411,6 +432,9 @@ function next(){
   if (generated) current = {...current, rule: generated.rule,
     id: idOf(current.spot, generated.rule, current.stage)};
   render();
+  // a long answer leaves the page scrolled down; the next question starts at its top
+  window.scrollTo({top:0, behavior: matchMedia('(prefers-reduced-motion:reduce)').matches
+    ? 'auto' : 'smooth'});
 }
 function grade(ok){
   if (!current) return;
@@ -494,7 +518,7 @@ function render(){
   q += '</div>';
 
   if (!shown){
-    q += `<button class="reveal" id="rev">答えを見る<kbd>space</kbd></button>`;
+    q += `<div class="actions"><button class="reveal" id="rev">答えを見る<kbd>space</kbd></button></div>`;
     main.innerHTML = q;
     document.getElementById('rev').onclick = () => { shown = true; render(); };
   } else {
@@ -515,9 +539,9 @@ function render(){
       a += `<section><h3>レンジ頻度（参考）</h3>${freqHTML(rule.freq)}</section>`;
     }
     a += '</div>';
-    a += `<div class="grade">
+    a += `<div class="actions"><div class="grade">
       <button class="no" id="no">もう一度<kbd>1</kbd></button>
-      <button class="yes" id="yes">できた<kbd>2</kbd></button></div>`;
+      <button class="yes" id="yes">できた<kbd>2</kbd></button></div></div>`;
     main.innerHTML = q + a;
     document.getElementById('no').onclick = () => grade(false);
     document.getElementById('yes').onclick = () => grade(true);
