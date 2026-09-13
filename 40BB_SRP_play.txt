@@ -558,7 +558,8 @@ utg vs btn x-x-utgアクション
     check  ← 全区分    (レンジの100%)
 
 ボードのT以上の枚数 2以下　ターン 9以上  [770]
-    check  ← 全区分    (レンジの100%)
+    check  ← それ以外    (レンジの98%)
+    125%   ← FD    (レンジの2%)
 
 ボードのT以上の枚数 2以下　ターン 8以下　フロップlo 7以上  [326]
     check  ← それ以外    (レンジの97%)
@@ -744,8 +745,8 @@ utg vs sb x-x-sbアクション
     33%    ← ストレート    (レンジの2%)
 
 フラッシュ完成盤面　ボードのT以上の枚数 0以下  [100]
-    check  ← それ以外    (レンジの79%)
-    33%    ← フルハウス, トップペア, OESD, ガットショット    (レンジの18%)
+    check  ← それ以外    (レンジの80%)
+    33%    ← トップペア, OESD, ガットショット    (レンジの17%)
     55%    ← ストレート    (レンジの3%)
 
 utg vs sb x-x-x-utgアクション
@@ -1214,13 +1215,13 @@ utg vs bb x-x-bbアクション          94.3%
 utg vs bb x-x-x-utgアクション       92.9%
 utg vs bb x-~33-c-bbアクション      94.1%
 utg vs bb x-~33-c-x-utgアクション   84.5%
-utg vs btn x-x-utgアクション        94.8%
+utg vs btn x-x-utgアクション        94.9%
 utg vs btn x-x-x-btnアクション      95.2%
 utg vs btn ~33-c-utgアクション      91.3%
 utg vs btn ~33-c-x-btnアクション    92.4%
 utg vs btn x-~33-c-utgアクション    98.9%
 utg vs btn x-~33-c-x-btnアクション  85.9%
-utg vs sb x-x-sbアクション          94.3%
+utg vs sb x-x-sbアクション          94.4%
 utg vs sb x-x-x-utgアクション       94.7%
 utg vs sb x-~33-c-sbアクション      98.3%
 utg vs sb x-~33-c-x-utgアクション   85.7%

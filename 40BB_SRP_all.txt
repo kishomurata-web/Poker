@@ -801,7 +801,8 @@ utg vs btn x-x-utgアクション    ベット率 39%
 ボードのT以上の枚数 2以下　ターン 9以上（60, 10, 10, 10, 10）  [770]  標準 [55/49/50/35]
     例外 デポラー [319]  Ts7h6d+Tc, Ts7h6d+Qs, Ts7h6d+Qh, Ts7h6d+Qd, Ts7h6d+Qc など
     打つなら
-      check  ← 全区分    (レンジの100%)
+      check  ← それ以外    (レンジの98%)
+      125%   ← FD    (レンジの2%)
 
 ボードのT以上の枚数 2以下　ターン 8以下　フロップlo 7以上（60, 20, 10, 10, 0）  [326]  標準 [54/50/45/34]
     例外 デポラー [112]  QsTs8s+8h, QsTs8s+8d, QsTs8s+8c, QsTs8s+3h, QsTs8s+3d など
@@ -1055,8 +1056,8 @@ utg vs sb x-x-sbアクション    ベット率 33%
 
 フラッシュ完成盤面　ボードのT以上の枚数 0以下（40, 40, 10, 10, 0）  [100]  標準 [68/65/63/49]
     打つなら
-      check  ← それ以外    (レンジの79%)
-      33%    ← フルハウス, トップペア, OESD, ガットショット    (レンジの18%)
+      check  ← それ以外    (レンジの80%)
+      33%    ← トップペア, OESD, ガットショット    (レンジの17%)
       55%    ← ストレート    (レンジの3%)
 
 utg vs sb x-x-x-utgアクション    ベット率 45%
@@ -1747,13 +1748,13 @@ utg vs bb x-x-bbアクション          94.3%
 utg vs bb x-x-x-utgアクション       92.9%
 utg vs bb x-~33-c-bbアクション      94.1%
 utg vs bb x-~33-c-x-utgアクション   84.5%
-utg vs btn x-x-utgアクション        94.8%
+utg vs btn x-x-utgアクション        94.9%
 utg vs btn x-x-x-btnアクション      95.2%
 utg vs btn ~33-c-utgアクション      91.3%
 utg vs btn ~33-c-x-btnアクション    92.4%
 utg vs btn x-~33-c-utgアクション    98.9%
 utg vs btn x-~33-c-x-btnアクション  85.9%
-utg vs sb x-x-sbアクション          94.3%
+utg vs sb x-x-sbアクション          94.4%
 utg vs sb x-x-x-utgアクション       94.7%
 utg vs sb x-~33-c-sbアクション      98.3%
 utg vs sb x-~33-c-x-utgアクション   85.7%
