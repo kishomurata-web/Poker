@@ -26,22 +26,19 @@ def load_hands(path, keyed_on_card):
     """
     acts = maxscore.has_actions(path)
     H = collections.defaultdict(list)
-    with gzip.open(path, 'rt') as f:
-        for r in csv.DictReader(f):
-            if r['check'] == '': continue
-            c = float(r['combos'])
-            if c <= 0: continue
+    if acts:
+        # the same reader the tables are built with, rather than a second copy
+        # of it here that can fall behind the export's shape
+        for r, _, what in maxscore.action_rows(path, lambda r: 1.0):
             k = (r['pair'], r['line'], r['node'], r['board'])
             if keyed_on_card: k += (r['card'],)
-            if acts:
-                what = {}
-                for i in range(1, maxscore.TOP_N + 1):
-                    code = r.get(f'c{i}') or ''
-                    if code: what[code] = float(r[f'f{i}'])
-                if not what: continue
-            else:
-                what = [float(r[x]) for x in ('check', 'b33', 'b50', 'b75', 'b125')]
-            H[k].append((r['bucket'], c, what))
+            H[k].append((r['bucket'], float(r['combos']), what))
+    else:
+        for r, _, what in maxscore.rows(path, lambda r: 1.0):
+            k = (r['pair'], r['line'], r['node'], r['board'])
+            if keyed_on_card: k += (r['card'],)
+            H[k].append((r['bucket'], float(r['combos']), what))
+    if not H: sys.exit(f"read no hands out of {path}")
     return H, acts
 
 def spot_curve(rows, H, key, grow, wf, acts=False):
@@ -90,6 +87,8 @@ def greedy(C, budget):
         s = w = l = r = 0.0
         for k, n in cur.items():
             t, ww, rr, ll = C[k][n]; s += t; w += ww; l += ll; r += rr
+        if not w: sys.exit("every spot weighed nothing - the hands file and the "
+                           "frequency file do not describe the same spots")
         return s / w * 100, int(r), int(l)
     while True:
         best = None
