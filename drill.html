@@ -1,0 +1,558 @@
+<title>40BB SRP ドリル</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+:root{
+  --paper:#F6F6F3; --card:#FFFFFF; --sunk:#EDEDE8;
+  --line:#DBDBD3; --line-soft:#E8E8E1;
+  --text:#1A1E25; --muted:#666E7A; --faint:#8D95A0;
+  --brass:#9A6F1E; --brass-soft:#F0E3C4;
+  --suit:#B3303C;
+  --ok:#3F7D58; --ok-soft:#DDEBE1;
+  --again:#A34A3E; --again-soft:#F2DFDB;
+  --b0:#B9BDC2; --b1:#D8B978; --b2:#C08E36; --b3:#9A6114; --b4:#6A3A0C;
+  --shadow:0 1px 2px rgba(20,24,31,.06), 0 6px 18px rgba(20,24,31,.05);
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --ui:"Archivo","Noto Sans JP",system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#14181E; --card:#1C222A; --sunk:#232A34;
+    --line:#2E3742; --line-soft:#262E38;
+    --text:#E7EAEE; --muted:#98A2AE; --faint:#6E7884;
+    --brass:#D9AB55; --brass-soft:#38301E;
+    --suit:#E4707A;
+    --ok:#63B184; --ok-soft:#1E3128;
+    --again:#D2796B; --again-soft:#33221E;
+    --b0:#4A535E; --b1:#8A6E33; --b2:#B5883C; --b3:#D0A253; --b4:#E8C877;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.28);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#14181E; --card:#1C222A; --sunk:#232A34;
+  --line:#2E3742; --line-soft:#262E38;
+  --text:#E7EAEE; --muted:#98A2AE; --faint:#6E7884;
+  --brass:#D9AB55; --brass-soft:#38301E;
+  --suit:#E4707A;
+  --ok:#63B184; --ok-soft:#1E3128;
+  --again:#D2796B; --again-soft:#33221E;
+  --b0:#4A535E; --b1:#8A6E33; --b2:#B5883C; --b3:#D0A253; --b4:#E8C877;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.28);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--text);
+  font-family:var(--ui); font-size:15px; line-height:1.6;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:640px; margin:0 auto; padding-inline:18px; padding-block:22px 64px}
+
+/* ---- instrument bar ---- */
+header{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:14px}
+h1{
+  font-size:17px; font-weight:700; letter-spacing:.01em; margin:0;
+  text-wrap:balance;
+}
+.sub{font-size:12px; color:var(--faint); font-family:var(--mono)}
+
+.stages{display:flex; gap:0; border:1px solid var(--line); border-radius:7px; overflow:hidden; margin-bottom:10px}
+.stages button{
+  flex:1; appearance:none; border:0; border-right:1px solid var(--line);
+  background:var(--card); color:var(--muted); font-family:var(--ui);
+  font-size:12.5px; font-weight:500; padding:9px 4px; cursor:pointer; line-height:1.35;
+}
+.stages button:last-child{border-right:0}
+.stages button b{display:block; font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.06em; color:var(--faint)}
+.stages button[aria-selected="true"]{background:var(--brass-soft); color:var(--text)}
+.stages button[aria-selected="true"] b{color:var(--brass)}
+.stages button:hover:not([aria-selected="true"]){background:var(--sunk)}
+
+.filters{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px}
+.chip{
+  appearance:none; border:1px solid var(--line); background:var(--card); color:var(--muted);
+  font-family:var(--mono); font-size:11.5px; padding:4px 9px; border-radius:20px; cursor:pointer;
+}
+.chip[aria-pressed="true"]{border-color:var(--brass); color:var(--brass); background:var(--brass-soft)}
+
+.meter{display:flex; align-items:center; gap:9px; margin-bottom:18px; font-family:var(--mono); font-size:11px; color:var(--faint)}
+.meter .track{flex:1; height:3px; background:var(--sunk); border-radius:2px; overflow:hidden}
+.meter .fill{height:100%; background:var(--brass); transition:width .3s}
+
+/* ---- drill card ---- */
+.q{
+  background:var(--card); border:1px solid var(--line); border-radius:10px;
+  box-shadow:var(--shadow); padding:20px 18px; margin-bottom:14px;
+}
+.eyebrow{
+  font-family:var(--mono); font-size:11px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--brass); margin-bottom:9px;
+}
+.spot{font-family:var(--mono); font-size:16px; font-weight:600; letter-spacing:-.01em; margin-bottom:3px}
+.betrate{font-family:var(--mono); font-size:11.5px; color:var(--faint)}
+.cond{
+  margin-top:14px; padding-top:13px; border-top:1px solid var(--line-soft);
+  font-size:15px; font-weight:500; line-height:1.65; text-wrap:balance;
+}
+.ask{margin-top:14px; font-size:13px; color:var(--muted)}
+
+/* board */
+.board{display:flex; gap:6px; margin-top:14px; flex-wrap:wrap}
+.pc{
+  font-family:var(--mono); font-size:20px; font-weight:600; line-height:1;
+  background:var(--sunk); border:1px solid var(--line); border-radius:5px;
+  padding:9px 8px 8px; min-width:40px; text-align:center;
+}
+.pc.red{color:var(--suit)}
+.pc.turn{border-color:var(--brass); background:var(--brass-soft)}
+.pc small{display:block; font-size:9px; letter-spacing:.08em; color:var(--faint); margin-top:3px; font-weight:400}
+
+/* ---- answer ---- */
+.a{
+  background:var(--card); border:1px solid var(--line); border-radius:10px;
+  box-shadow:var(--shadow); padding:18px; margin-bottom:14px;
+}
+.a h3{
+  font-family:var(--mono); font-size:11px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--faint); font-weight:600; margin:0 0 11px;
+}
+.a h3+*{margin-top:0}
+.a section+section{margin-top:20px; padding-top:18px; border-top:1px solid var(--line-soft)}
+
+/* frequency instrument */
+.freqbar{display:flex; height:26px; border-radius:4px; overflow:hidden; margin-bottom:9px; background:var(--sunk)}
+.freqbar span{display:block}
+.freqnums{display:grid; grid-template-columns:repeat(5,1fr); gap:5px; font-family:var(--mono); font-size:11px}
+.freqnums div{text-align:center}
+.freqnums .v{font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.25}
+.freqnums .k{color:var(--faint); font-size:10px; letter-spacing:.02em}
+.swatch{display:inline-block; width:7px; height:7px; border-radius:2px; margin-right:3px; vertical-align:baseline}
+
+.tagrow{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:13px}
+.tag{
+  font-family:var(--mono); font-size:11.5px; padding:3px 9px; border-radius:4px;
+  background:var(--brass-soft); color:var(--brass); font-weight:600;
+}
+.bands{font-family:var(--mono); font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums}
+
+/* play lines */
+.play{display:flex; flex-direction:column; gap:9px}
+.line{display:grid; grid-template-columns:66px 1fr; gap:11px; align-items:start}
+.act{
+  font-family:var(--mono); font-size:13.5px; font-weight:600; text-align:right;
+  padding-top:1px; font-variant-numeric:tabular-nums;
+}
+.bk{font-size:13px; line-height:1.55; color:var(--text)}
+.bk em{font-style:normal; color:var(--faint); font-family:var(--mono); font-size:11px; margin-left:5px}
+
+/* grading */
+.grade{display:grid; grid-template-columns:1fr 1fr; gap:9px}
+.grade button, .reveal{
+  appearance:none; border:1px solid var(--line); border-radius:8px; cursor:pointer;
+  font-family:var(--ui); font-size:14px; font-weight:600; padding:13px 10px;
+  background:var(--card); color:var(--text);
+}
+.reveal{width:100%; border-color:var(--brass); color:var(--brass); background:var(--brass-soft)}
+.grade .no{border-color:var(--again); color:var(--again); background:var(--again-soft)}
+.grade .yes{border-color:var(--ok); color:var(--ok); background:var(--ok-soft)}
+.grade button kbd, .reveal kbd{
+  font-family:var(--mono); font-size:10px; font-weight:400; opacity:.65; margin-left:6px;
+  border:0; background:none; padding:0;
+}
+button:focus-visible{outline:2px solid var(--brass); outline-offset:2px}
+
+.done{text-align:center; padding:34px 18px; color:var(--muted)}
+.done b{display:block; font-size:16px; color:var(--text); margin-bottom:6px}
+.linkish{
+  appearance:none; background:none; border:0; color:var(--brass); cursor:pointer;
+  font-family:var(--ui); font-size:13px; text-decoration:underline; padding:4px;
+}
+
+/* reference list */
+.ref{margin-top:8px}
+.ref details{border:1px solid var(--line); border-radius:9px; background:var(--card); margin-bottom:8px; overflow:hidden}
+.ref summary{
+  cursor:pointer; padding:11px 14px; font-family:var(--mono); font-size:13px; font-weight:600;
+  display:flex; justify-content:space-between; gap:10px; align-items:baseline;
+}
+.ref summary::-webkit-details-marker{display:none}
+.ref summary span{font-size:11px; color:var(--faint); font-weight:400}
+.ref .body{padding:0 14px 14px; border-top:1px solid var(--line-soft)}
+.ref .r{padding-top:13px}
+.ref .r+.r{margin-top:13px; border-top:1px solid var(--line-soft)}
+.ref .rl{font-size:13.5px; font-weight:500; margin-bottom:8px; line-height:1.55}
+.ref .n{font-family:var(--mono); font-size:11px; color:var(--faint); font-weight:400}
+
+.foot{margin-top:26px; font-size:11.5px; color:var(--faint); line-height:1.7}
+.foot code{font-family:var(--mono); font-size:11px}
+@media (max-width:430px){
+  .line{grid-template-columns:58px 1fr; gap:9px}
+  .freqnums .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>40BB SRP ドリル</h1>
+    <span class="sub" id="tally">—</span>
+  </header>
+
+  <div class="stages" role="tablist" id="stages">
+    <button role="tab" aria-selected="true" data-s="1"><b>STAGE 1</b>レンジ頻度</button>
+    <button role="tab" aria-selected="false" data-s="2"><b>STAGE 2</b>ハンド別</button>
+    <button role="tab" aria-selected="false" data-s="3"><b>STAGE 3</b>条件判定</button>
+    <button role="tab" aria-selected="false" data-s="0"><b>REF</b>一覧</button>
+  </div>
+
+  <div class="filters" id="filters"></div>
+
+  <div class="meter" id="meter" hidden>
+    <span id="mlabel">—</span>
+    <span class="track"><span class="fill" id="mfill" style="width:0%"></span></span>
+    <span id="mcount">0</span>
+  </div>
+
+  <div id="main"></div>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script type="application/json" id="data">{"buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "spots": [{"name": "utg vs bb utg c-bet", "street": "flop", "pair": "UTG_vs_BB", "line": "FLOP", "node": "flop_IP", "bet": 85, "rules": [{"label": "ペアなし　T以上が1枚以上　hi-mid差 4以下", "cond": [["pair", false, null], ["nT", true, 1], ["ghm", false, 5]], "freq": [10, 40, 30, 20, 0], "n": 9600, "pattern": "レンジベット", "bands": "93/96/90/88", "play": [{"act": "55%", "buckets": ["ストレート", "2ペア", "最下位ペア以下", "コンボドロー", "FD", "OESD", "ガットショット", "ノーペア"], "share": 0.4079}, {"act": "83%", "buckets": ["オーバーペア", "トップペア", "ナッツFD", "2BDFD"], "share": 0.3052}, {"act": "33%", "buckets": ["3カード", "2nd-3rdペア"], "share": 0.2833}, {"act": "20%", "buckets": ["ストフラ・4カード", "フラッシュ"], "share": 0.0036}]}, {"label": "ペアなし　T以上が1枚以上　hi-mid差 5以上", "cond": [["pair", false, null], ["nT", true, 1], ["ghm", true, 5]], "freq": [0, 70, 20, 10, 0], "n": 5120, "pattern": "レンジベット", "bands": "94/96/93/94", "play": [{"act": "20%", "buckets": ["フラッシュ", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "ナッツFD", "2BDFD", "ノーペア"], "share": 0.9246}, {"act": "33%", "buckets": ["コンボドロー", "FD", "OESD", "ガットショット"], "share": 0.0404}, {"act": "55%", "buckets": ["オーバーペア"], "share": 0.035}]}, {"label": "ペアなし　T以上が0枚以下　mid 5以上", "cond": [["pair", false, null], ["nT", false, 1], ["mid", true, 3]], "freq": [40, 10, 20, 20, 10], "n": 2560, "pattern": "標準", "bands": "73/83/56/52", "play": [{"act": "check", "buckets": ["3カード", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8433}, {"act": "83%", "buckets": ["2ペア", "オーバーペア"], "share": 0.1499}, {"act": "20%", "buckets": ["フラッシュ"], "share": 0.0048}, {"act": "55%", "buckets": ["ストレート"], "share": 0.002}, {"act": "33%", "buckets": ["ストフラ・4カード"], "share": 0.0}]}, {"label": "ペアボード　ハイカードがペア", "cond": [["pair", true, null], ["pairhi", true, null]], "freq": [0, 100, 0, 0, 0], "n": 1924, "pattern": "レンジベット", "bands": "97/97/93/93", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}, {"label": "ペアボード　ハイカード以外がペア", "cond": [["pair", true, null], ["pairhi", false, null]], "freq": [20, 80, 0, 0, 0], "n": 1872, "pattern": "レンジベット", "bands": "82/70/70/82", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}, {"label": "ペアなし　T以上が0枚以下　mid 4以下", "cond": [["pair", false, null], ["nT", false, 1], ["mid", false, 3]], "freq": [30, 40, 20, 10, 0], "n": 1024, "pattern": "標準", "bands": "84/87/77/68", "play": [{"act": "check", "buckets": ["2nd-3rdペア", "最下位ペア以下", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.6959}, {"act": "33%", "buckets": ["ストフラ・4カード", "ストレート", "3カード", "オーバーペア", "トップペア", "コンボドロー", "ナッツFD", "FD"], "share": 0.2987}, {"act": "20%", "buckets": ["フラッシュ"], "share": 0.0054}]}]}, {"name": "utg vs bb bb donk bet", "street": "flop", "pair": "UTG_vs_BB", "line": "FLOP", "node": "flop_OOP", "bet": 1, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 22100, "pattern": "標準", "bands": "3/1/1/1", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "utg vs btn utg c-bet", "street": "flop", "pair": "UTG_vs_BTN", "line": "FLOP", "node": "flop_OOP", "bet": 51, "rules": [{"label": "ペアなし　レインボー以外　T以上が1枚以上", "cond": [["nT", true, 1], ["rain", false, null], ["pair", false, null]], "freq": [50, 30, 10, 10, 0], "n": 9200, "pattern": "デポラー", "bands": "52/66/49/45", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フラッシュ", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.995}, {"act": "20%", "buckets": ["ストレート"], "share": 0.005}]}, {"label": "レインボー　T以上が1枚　hi K以下", "cond": [["nT", true, 1], ["rain", true, null], ["nT", false, 2], ["hi", false, 12]], "freq": [40, 30, 20, 10, 0], "n": 3072, "pattern": "デポラー", "bands": "66/77/65/57", "play": [{"act": "check", "buckets": ["フルハウス", "3カード", "トップペア", "2nd-3rdペア", "最下位ペア以下", "2BDFD", "ノーペア"], "share": 0.8206}, {"act": "55%", "buckets": ["オーバーペア", "ガットショット"], "share": 0.1077}, {"act": "33%", "buckets": ["ストレート", "2ペア", "OESD"], "share": 0.0712}, {"act": "20%", "buckets": ["ストフラ・4カード"], "share": 0.0004}]}, {"label": "ペアなし　レインボー　T以上が2枚以上", "cond": [["nT", true, 1], ["rain", true, null], ["nT", true, 2], ["pair", false, null]], "freq": [30, 60, 10, 0, 0], "n": 2160, "pattern": "デポラー", "bands": "70/86/75/69", "play": [{"act": "20%", "buckets": ["ストレート", "3カード", "トップペア", "2nd-3rdペア", "最下位ペア以下", "2BDFD"], "share": 0.7062}, {"act": "33%", "buckets": ["2ペア", "オーバーペア", "OESD", "ガットショット"], "share": 0.2667}, {"act": "check", "buckets": ["ノーペア"], "share": 0.0271}]}, {"label": "ペアなし　ストレート完成　T以上が0枚以下", "cond": [["nT", false, 1], ["pair", false, null], ["str", true, null]], "freq": [80, 10, 10, 0, 0], "n": 1792, "pattern": "標準", "bands": "32/33/27/18", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}, {"label": "ペアなし　ストレート未完成　T以上が0枚以下", "cond": [["nT", false, 1], ["pair", false, null], ["str", false, null]], "freq": [70, 10, 10, 10, 0], "n": 1792, "pattern": "標準", "bands": "43/51/36/28", "play": [{"act": "check", "buckets": ["フラッシュ", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}, {"label": "ペアボード　レインボー以外　T以上が1枚以上", "cond": [["nT", true, 1], ["rain", false, null], ["pair", true, null]], "freq": [40, 50, 10, 0, 0], "n": 1200, "pattern": "レンジベット", "bands": "69/71/62/62", "play": [{"act": "check", "buckets": ["フルハウス", "2ペア", "ノーペア"], "share": 0.7219}, {"act": "20%", "buckets": ["ストフラ・4カード", "3カード", "ナッツFD", "FD", "2BDFD"], "share": 0.2199}, {"act": "33%", "buckets": ["コンボドロー", "OESD", "ガットショット"], "share": 0.0582}]}, {"label": "レインボー　T以上が1枚　hi A以上", "cond": [["nT", true, 1], ["rain", true, null], ["nT", false, 2], ["hi", true, 12]], "freq": [50, 40, 10, 0, 0], "n": 768, "pattern": "標準", "bands": "66/63/56/47", "play": [{"act": "check", "buckets": ["3カード", "トップペア", "2nd-3rdペア", "最下位ペア以下", "OESD", "ガットショット", "ノーペア"], "share": 0.7531}, {"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "2ペア", "2BDFD"], "share": 0.2469}]}, {"label": "ペアボード　レインボー　T以上が2枚以上", "cond": [["nT", true, 1], ["rain", true, null], ["nT", true, 2], ["pair", true, null]], "freq": [20, 70, 10, 0, 0], "n": 740, "pattern": "レンジベット", "bands": "84/88/81/80", "play": [{"act": "33%", "buckets": ["3カード", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.6234}, {"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "2ペア"], "share": 0.3766}]}, {"label": "ペアボード　レインボー　T以上が0枚以下", "cond": [["nT", false, 1], ["pair", true, null], ["rain", true, null]], "freq": [50, 20, 20, 10, 0], "n": 704, "pattern": "標準", "bands": "68/58/58/44", "play": [{"act": "check", "buckets": ["2ペア", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9556}, {"act": "55%", "buckets": ["フルハウス", "3カード", "OESD"], "share": 0.0408}, {"act": "33%", "buckets": ["ストフラ・4カード"], "share": 0.0036}]}, {"label": "ペアボード　レインボー以外　T以上が0枚以下", "cond": [["nT", false, 1], ["pair", true, null], ["rain", false, null]], "freq": [60, 20, 10, 10, 0], "n": 672, "pattern": "標準", "bands": "55/50/50/36", "play": [{"act": "check", "buckets": ["フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9966}, {"act": "33%", "buckets": ["ストフラ・4カード"], "share": 0.0034}]}]}, {"name": "utg vs btn btn BMCB", "street": "flop", "pair": "UTG_vs_BTN", "line": "FLOP", "node": "flop_IP", "bet": 47, "rules": [{"label": "T以上が1枚以下", "cond": [["nT", false, 2]], "freq": [50, 40, 10, 0, 0], "n": 14880, "pattern": "標準", "bands": "80/61/43/50", "play": [{"act": "check", "buckets": ["フラッシュ", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9252}, {"act": "33%", "buckets": ["ストフラ・4カード", "フルハウス", "ストレート", "3カード", "オーバーペア"], "share": 0.0748}]}, {"label": "T以上が2枚以上", "cond": [["nT", true, 2]], "freq": [60, 20, 20, 0, 0], "n": 7220, "pattern": "標準", "bands": "68/51/34/36", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9895}, {"act": "55%", "buckets": ["ストレート", "オーバーペア"], "share": 0.0105}]}]}, {"name": "utg vs sb utg c-bet", "street": "flop", "pair": "UTG_vs_SB", "line": "FLOP", "node": "flop_IP", "bet": 75, "rules": [{"label": "ペアなし　T以上が1枚以上　hi K以下", "cond": [["nT", true, 1], ["pair", false, null], ["hi", false, 12]], "freq": [20, 60, 20, 0, 0], "n": 10496, "pattern": "レンジベット", "bands": "88/92/78/80", "play": [{"act": "33%", "buckets": ["ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.955}, {"act": "20%", "buckets": ["ストフラ・4カード", "フラッシュ", "最下位ペア以下"], "share": 0.045}]}, {"label": "ペアなし　T以上が1枚以上　hi A以上", "cond": [["nT", true, 1], ["pair", false, null], ["hi", true, 12]], "freq": [40, 40, 20, 0, 0], "n": 4224, "pattern": "標準", "bands": "76/77/64/58", "play": [{"act": "check", "buckets": ["フラッシュ", "トップペア", "2nd-3rdペア", "最下位ペア以下", "ナッツFD", "FD", "2BDFD", "ノーペア"], "share": 0.8287}, {"act": "55%", "buckets": ["ガットショット"], "share": 0.0702}, {"act": "33%", "buckets": ["ストレート", "2ペア", "コンボドロー", "OESD"], "share": 0.062}, {"act": "20%", "buckets": ["ストフラ・4カード", "3カード"], "share": 0.0392}]}, {"label": "ペアなし　モノトーン以外　T以上が0枚以下", "cond": [["nT", false, 1], ["pair", false, null], ["mono", false, null]], "freq": [40, 30, 30, 0, 0], "n": 3360, "pattern": "標準", "bands": "80/79/59/55", "play": [{"act": "check", "buckets": ["2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.7394}, {"act": "55%", "buckets": ["2ペア", "オーバーペア", "トップペア"], "share": 0.2054}, {"act": "33%", "buckets": ["ストレート", "3カード", "FD"], "share": 0.0551}]}, {"label": "ペアボード　ハイカードがペア　T以上が1枚以上", "cond": [["nT", true, 1], ["pair", true, null], ["pairhi", true, null]], "freq": [0, 100, 0, 0, 0], "n": 1220, "pattern": "レンジベット", "bands": "96/97/94/96", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "FD", "ガットショット"], "share": 0.5484}, {"act": "33%", "buckets": ["ナッツFD", "OESD", "2BDFD", "ノーペア"], "share": 0.4516}]}, {"label": "ペアボード　ハイカード以外がペア　T以上が1枚以上", "cond": [["nT", true, 1], ["pair", true, null], ["pairhi", false, null]], "freq": [10, 80, 10, 0, 0], "n": 1200, "pattern": "レンジベット", "bands": "92/85/84/90", "play": [{"act": "33%", "buckets": ["3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9766}, {"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス"], "share": 0.0234}]}, {"label": "ペアボード　T以上が0枚以下　mid 7以下", "cond": [["nT", false, 1], ["pair", true, null], ["mid", false, 6]], "freq": [20, 50, 30, 0, 0], "n": 1032, "pattern": "レンジベット", "bands": "89/83/81/77", "play": [{"act": "33%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9822}, {"act": "55%", "buckets": ["ナッツFD"], "share": 0.0178}]}, {"label": "ペアボード　T以上が0枚以下　mid 8以上", "cond": [["nT", false, 1], ["pair", true, null], ["mid", true, 6]], "freq": [20, 70, 10, 0, 0], "n": 344, "pattern": "レンジベット", "bands": "93/83/81/80", "play": [{"act": "33%", "buckets": ["フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9953}, {"act": "20%", "buckets": ["ストフラ・4カード"], "share": 0.0047}]}, {"label": "ペアなし　モノトーン　T以上が0枚以下", "cond": [["nT", false, 1], ["pair", false, null], ["mono", true, null]], "freq": [50, 50, 0, 0, 0], "n": 224, "pattern": "標準", "bands": "66/56/47/48", "play": [{"act": "check", "buckets": ["ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "FD", "OESD", "ガットショット", "ノーペア"], "share": 0.8746}, {"act": "20%", "buckets": ["ストフラ・4カード", "フラッシュ", "ナッツFD"], "share": 0.1254}]}]}, {"name": "utg vs sb sb donk bet", "street": "flop", "pair": "UTG_vs_SB", "line": "FLOP", "node": "flop_OOP", "bet": 2, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 22100, "pattern": "標準", "bands": "5/2/1/2", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "btn vs bb btn c-bet", "street": "flop", "pair": "BTN_vs_BB", "line": "FLOP", "node": "flop_IP", "bet": 75, "rules": [{"label": "ペアなし　HM,MLSD　hi K以下", "cond": [["hmml", true, null], ["pair", false, null], ["hi", false, 12]], "freq": [50, 20, 20, 10, 0], "n": 7168, "pattern": "標準", "bands": "84/85/49/55", "play": [{"act": "check", "buckets": ["2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.7916}, {"act": "83%", "buckets": ["オーバーペア", "トップペア"], "share": 0.1598}, {"act": "55%", "buckets": ["ストレート", "2ペア"], "share": 0.0302}, {"act": "33%", "buckets": ["ストフラ・4カード", "フラッシュ", "3カード"], "share": 0.0184}]}, {"label": "HM,MLnSD　mid-lo差 5以下　hi K以下", "cond": [["hmml", false, null], ["gml", false, 6], ["hi", false, 12]], "freq": [30, 70, 0, 0, 0], "n": 5512, "pattern": "レンジベット", "bands": "81/86/73/74", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "フラッシュ", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9668}, {"act": "33%", "buckets": ["オーバーペア"], "share": 0.0202}, {"act": "check", "buckets": ["フルハウス", "最下位ペア以下"], "share": 0.013}]}, {"label": "モノトーン以外　HM,MLnSD　mid-lo差 6以上", "cond": [["hmml", false, null], ["gml", true, 6], ["mono", false, null]], "freq": [10, 90, 0, 0, 0], "n": 3936, "pattern": "レンジベット", "bands": "98/96/88/92", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9892}, {"act": "33%", "buckets": ["オーバーペア"], "share": 0.0108}]}, {"label": "HM,MLnSD　mid-lo差 5以下　hi A以上", "cond": [["hmml", false, null], ["gml", false, 6], ["hi", true, 12]], "freq": [0, 70, 20, 10, 0], "n": 1592, "pattern": "レンジベット", "bands": "89/94/97/96", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9927}, {"act": "33%", "buckets": ["フラッシュ", "コンボドロー"], "share": 0.0073}]}, {"label": "ペアボード　HM,MLSD　T以上が1枚以下", "cond": [["hmml", true, null], ["pair", true, null], ["nT", false, 2]], "freq": [30, 70, 0, 0, 0], "n": 1424, "pattern": "標準", "bands": "90/71/69/68", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}, {"label": "ペアなし　HM,MLSD　hi A以上", "cond": [["hmml", true, null], ["pair", false, null], ["hi", true, 12]], "freq": [10, 50, 20, 20, 0], "n": 1408, "pattern": "レンジベット", "bands": "97/96/92/93", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "2nd-3rdペア", "ナッツFD", "FD", "2BDFD", "ノーペア"], "share": 0.5189}, {"act": "55%", "buckets": ["ストレート", "2ペア", "トップペア", "最下位ペア以下", "OESD", "ガットショット"], "share": 0.4498}, {"act": "33%", "buckets": ["フラッシュ", "3カード", "コンボドロー"], "share": 0.0312}]}, {"label": "ペアボード　HM,MLSD　T以上が2枚以上", "cond": [["hmml", true, null], ["pair", true, null], ["nT", true, 2]], "freq": [10, 90, 0, 0, 0], "n": 836, "pattern": "レンジベット", "bands": "93/92/80/89", "play": [{"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}, {"label": "モノトーン　HM,MLnSD　mid-lo差 6以上", "cond": [["hmml", false, null], ["gml", true, 6], ["mono", true, null]], "freq": [30, 50, 20, 0, 0], "n": 224, "pattern": "標準", "bands": "79/79/59/64", "play": [{"act": "check", "buckets": ["トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "FD", "ガットショット", "ノーペア"], "share": 0.8427}, {"act": "33%", "buckets": ["フラッシュ", "3カード", "ナッツFD"], "share": 0.1043}, {"act": "55%", "buckets": ["2ペア", "オーバーペア", "OESD"], "share": 0.0529}]}]}, {"name": "btn vs bb bb donk bet", "street": "flop", "pair": "BTN_vs_BB", "line": "FLOP", "node": "flop_OOP", "bet": 2, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 22100, "pattern": "標準", "bands": "5/3/2/1", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "btn vs sb btn c-bet", "street": "flop", "pair": "BTN_vs_SB", "line": "FLOP", "node": "flop_IP", "bet": 51, "rules": [{"label": "ペアなし　hi-mid差 4以下　hi Q以下", "cond": [["ghm", false, 5], ["hi", false, 11], ["pair", false, null]], "freq": [50, 30, 20, 0, 0], "n": 8320, "pattern": "ポラー", "bands": "79/74/37/50", "play": [{"act": "check", "buckets": ["トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9158}, {"act": "55%", "buckets": ["2ペア", "オーバーペア"], "share": 0.0579}, {"act": "33%", "buckets": ["ストレート", "3カード"], "share": 0.0227}, {"act": "20%", "buckets": ["ストフラ・4カード", "フラッシュ"], "share": 0.0036}]}, {"label": "ハイカードがペアでない　hi-mid差 4以下　hi K以上", "cond": [["ghm", false, 5], ["hi", true, 11], ["pairhi", false, null]], "freq": [70, 10, 10, 10, 0], "n": 4800, "pattern": "標準", "bands": "61/56/32/34", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9898}, {"act": "55%", "buckets": ["ストレート", "オーバーペア"], "share": 0.0102}]}, {"label": "レインボー以外　hi-mid差 5以上", "cond": [["ghm", true, 5], ["rain", false, null]], "freq": [50, 50, 0, 0, 0], "n": 3792, "pattern": "標準", "bands": "72/64/51/49", "play": [{"act": "check", "buckets": ["フルハウス", "フラッシュ", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9221}, {"act": "33%", "buckets": ["ストレート", "3カード", "2ペア", "オーバーペア"], "share": 0.0777}, {"act": "20%", "buckets": ["ストフラ・4カード"], "share": 0.0002}]}, {"label": "レインボー　hi-mid差 5以上", "cond": [["ghm", true, 5], ["rain", true, null]], "freq": [40, 50, 10, 0, 0], "n": 2448, "pattern": "標準", "bands": "80/75/62/57", "play": [{"act": "check", "buckets": ["フルハウス", "2nd-3rdペア", "最下位ペア以下", "ガットショット", "2BDFD", "ノーペア"], "share": 0.7659}, {"act": "33%", "buckets": ["ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "OESD"], "share": 0.2338}, {"act": "20%", "buckets": ["ストフラ・4カード"], "share": 0.0003}]}, {"label": "ペアボード　hi-mid差 4以下　hi Q以下", "cond": [["ghm", false, 5], ["hi", false, 11], ["pair", true, null]], "freq": [40, 40, 20, 0, 0], "n": 2180, "pattern": "標準", "bands": "84/74/65/62", "play": [{"act": "check", "buckets": ["ガットショット", "2BDFD", "ノーペア"], "share": 0.689}, {"act": "33%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD"], "share": 0.311}]}, {"label": "ハイカードがペア　hi-mid差 4以下　hi K以上", "cond": [["ghm", false, 5], ["hi", true, 11], ["pairhi", true, null]], "freq": [40, 50, 10, 0, 0], "n": 560, "pattern": "標準", "bands": "68/74/54/53", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8648}, {"act": "33%", "buckets": ["3カード"], "share": 0.1352}]}]}, {"name": "btn vs sb sb donk bet", "street": "flop", "pair": "BTN_vs_SB", "line": "FLOP", "node": "flop_OOP", "bet": 9, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 22100, "pattern": "標準", "bands": "16/12/9/8", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "sb vs bb sb c-bet", "street": "flop", "pair": "SB_vs_BB", "line": "FLOP", "node": "flop_OOP", "bet": 58, "rules": [{"label": "ペアなし　HM,MLnSD　hi K〜J", "cond": [["hi", true, 9], ["pair", false, null], ["hi", false, 12], ["hmml", false, null]], "freq": [40, 40, 10, 10, 0], "n": 5632, "pattern": "標準", "bands": "70/72/58/54", "play": [{"act": "check", "buckets": ["フラッシュ", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9508}, {"act": "25%", "buckets": ["3カード", "2ペア", "OESD"], "share": 0.0492}]}, {"label": "ペアなし　モノトーン以外　hi T以下", "cond": [["hi", false, 9], ["pair", false, null], ["mono", false, null]], "freq": [60, 10, 0, 30, 0], "n": 5040, "pattern": "デポラー", "bands": "51/70/43/36", "play": [{"act": "check", "buckets": ["ストレート", "3カード", "2ペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8043}, {"act": "100%", "buckets": ["オーバーペア", "トップペア"], "share": 0.1957}]}, {"label": "ペアなし　HM,MLSD　hi K〜J", "cond": [["hi", true, 9], ["pair", false, null], ["hi", false, 12], ["hmml", true, null]], "freq": [50, 30, 0, 20, 0], "n": 3072, "pattern": "デポラー", "bands": "57/75/51/49", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フラッシュ", "ストレート", "3カード", "2ペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8397}, {"act": "100%", "buckets": ["オーバーペア", "トップペア"], "share": 0.1603}]}, {"label": "ペアなし　hi A以上　mid J以下", "cond": [["hi", true, 9], ["pair", false, null], ["hi", true, 12], ["mid", false, 10]], "freq": [30, 50, 10, 10, 0], "n": 2880, "pattern": "レンジベット", "bands": "76/82/74/69", "play": [{"act": "check", "buckets": ["フラッシュ", "最下位ペア以下", "ナッツFD", "ノーペア"], "share": 0.3687}, {"act": "12%", "buckets": ["ストフラ・4カード", "3カード", "2nd-3rdペア", "コンボドロー", "FD", "OESD", "ガットショット"], "share": 0.3656}, {"act": "25%", "buckets": ["2ペア", "トップペア", "2BDFD"], "share": 0.2645}, {"act": "50%", "buckets": ["ストレート"], "share": 0.0013}]}, {"label": "ペアボード　hi J以上　mid-lo差 4以下", "cond": [["hi", true, 9], ["pair", true, null], ["gml", false, 5]], "freq": [30, 60, 10, 0, 0], "n": 1408, "pattern": "レンジベット", "bands": "83/80/77/73", "play": [{"act": "25%", "buckets": ["3カード", "2ペア", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.972}, {"act": "12%", "buckets": ["ストフラ・4カード", "フルハウス", "コンボドロー"], "share": 0.021}, {"act": "check", "buckets": ["ナッツFD"], "share": 0.0069}]}, {"label": "ペアなし　hi A以上　mid Q以上", "cond": [["hi", true, 9], ["pair", false, null], ["hi", true, 12], ["mid", true, 10]], "freq": [40, 40, 0, 10, 10], "n": 1344, "pattern": "デポラー", "bands": "65/76/58/55", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フラッシュ", "ストレート", "3カード", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "ガットショット", "ノーペア"], "share": 0.8897}, {"act": "12%", "buckets": ["2ペア", "2BDFD"], "share": 0.1047}, {"act": "100%", "buckets": ["OESD"], "share": 0.0055}]}, {"label": "ペアボード　ホイール以外　hi T以下", "cond": [["hi", false, 9], ["pair", true, null], ["wheel", false, null]], "freq": [30, 50, 20, 0, 0], "n": 1076, "pattern": "レンジベット", "bands": "83/80/78/70", "play": [{"act": "25%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}, {"label": "ペアボード　ホイールボード　hi T以下", "cond": [["hi", false, 9], ["pair", true, null], ["wheel", true, null]], "freq": [40, 30, 20, 10, 0], "n": 688, "pattern": "標準", "bands": "80/72/69/56", "play": [{"act": "check", "buckets": ["2ペア", "コンボドロー", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9545}, {"act": "50%", "buckets": ["3カード"], "share": 0.0288}, {"act": "25%", "buckets": ["ストフラ・4カード", "フルハウス", "ナッツFD"], "share": 0.0166}]}, {"label": "ペアボード　hi J以上　mid-lo差 5以上", "cond": [["hi", true, 9], ["pair", true, null], ["gml", true, 5]], "freq": [20, 50, 30, 0, 0], "n": 624, "pattern": "レンジベット", "bands": "89/89/87/80", "play": [{"act": "25%", "buckets": ["ストフラ・4カード", "フルハウス", "3カード", "2ペア", "コンボドロー", "ナッツFD", "FD", "2BDFD", "ノーペア"], "share": 0.9983}, {"act": "50%", "buckets": ["ガットショット"], "share": 0.0017}]}, {"label": "ペアなし　モノトーン　hi T以下", "cond": [["hi", false, 9], ["pair", false, null], ["mono", true, null]], "freq": [50, 40, 0, 10, 0], "n": 336, "pattern": "標準", "bands": "56/61/52/48", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "ノーペア"], "share": 1.0}]}]}, {"name": "sb vs bb bb BMCB", "street": "flop", "pair": "SB_vs_BB", "line": "FLOP", "node": "flop_IP", "bet": 45, "rules": [{"label": "ペアなし　HM,MLSD　ホイール未完成", "cond": [["hmml", true, null], ["wmade", false, null], ["pair", false, null]], "freq": [60, 10, 20, 10, 0], "n": 8192, "pattern": "標準", "bands": "74/71/30/40", "play": [{"act": "check", "buckets": ["フラッシュ", "3カード", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.836}, {"act": "50%", "buckets": ["ストレート", "2ペア", "オーバーペア", "トップペア"], "share": 0.1639}, {"act": "25%", "buckets": ["ストフラ・4カード"], "share": 0.0001}]}, {"label": "ペアなし　HM,MLnSD　hi-mid差 5以下", "cond": [["hmml", false, null], ["ghm", false, 6], ["pair", false, null]], "freq": [60, 30, 10, 0, 0], "n": 6528, "pattern": "標準", "bands": "72/66/35/42", "play": [{"act": "check", "buckets": ["フラッシュ", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.971}, {"act": "25%", "buckets": ["3カード", "2ペア"], "share": 0.0286}, {"act": "50%", "buckets": ["オーバーペア"], "share": 0.0004}]}, {"label": "HM,MLnSD　hi-mid差 6以上", "cond": [["hmml", false, null], ["ghm", true, 6]], "freq": [50, 40, 10, 0, 0], "n": 3776, "pattern": "標準", "bands": "70/65/50/45", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "2nd-3rdペア", "最下位ペア以下", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.822}, {"act": "25%", "buckets": ["3カード", "2ペア", "オーバーペア", "トップペア", "コンボドロー"], "share": 0.178}]}, {"label": "ペアボード　HM,MLSD　ホイール未完成", "cond": [["hmml", true, null], ["wmade", false, null], ["pair", true, null]], "freq": [60, 30, 10, 0, 0], "n": 2064, "pattern": "標準", "bands": "69/58/48/42", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "2ペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9253}, {"act": "25%", "buckets": ["3カード"], "share": 0.0747}]}, {"label": "ペアボード　HM,MLnSD　hi-mid差 5以下", "cond": [["hmml", false, null], ["ghm", false, 6], ["pair", true, null]], "freq": [50, 40, 10, 0, 0], "n": 960, "pattern": "標準", "bands": "70/65/54/45", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "2ペア", "ナッツFD", "2BDFD", "ノーペア"], "share": 0.8771}, {"act": "25%", "buckets": ["3カード", "FD"], "share": 0.1229}]}, {"label": "HM,MLSD　ホイール完成", "cond": [["hmml", true, null], ["wmade", true, null]], "freq": [50, 50, 0, 0, 0], "n": 580, "pattern": "標準", "bands": "73/59/57/45", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "2ペア", "2nd-3rdペア", "ナッツFD", "FD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8611}, {"act": "25%", "buckets": ["フルハウス", "フラッシュ", "ストレート", "3カード", "トップペア", "最下位ペア以下", "コンボドロー", "OESD"], "share": 0.1389}]}]}, {"name": "utg vs bb x-x-bbアクション", "street": "turn", "pair": "UTG_vs_BB", "line": "XX", "node": "turn_OOP", "bet": 30, "rules": [{"label": "ボードのT以上の枚数 1以上", "cond": [["nT", true, 1]], "freq": [80, 10, 0, 0, 10], "n": 2053, "pattern": "標準", "bands": "44/33/30/21", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}, {"label": "ボードのT以上の枚数 0以下", "cond": [["nT", false, 1]], "freq": [40, 30, 10, 10, 10], "n": 348, "pattern": "標準", "bands": "66/75/73/50", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "3カード", "2ペア", "2nd-3rdペア", "最下位ペア以下", "ナッツFD", "FD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8087}, {"act": "55%", "buckets": ["トップペア", "OESD"], "share": 0.1184}, {"act": "33%", "buckets": ["ストレート", "オーバーペア"], "share": 0.037}, {"act": "83%", "buckets": ["コンボドロー"], "share": 0.0359}]}]}, {"name": "utg vs bb x-x-x-utgアクション", "street": "turn", "pair": "UTG_vs_BB", "line": "XX", "node": "turn_IP", "bet": 53, "rules": [{"label": "全ボード", "cond": [], "freq": [50, 30, 10, 10, 0], "n": 2401, "pattern": "標準", "bands": "75/62/52/41", "play": [{"act": "check", "buckets": ["フラッシュ", "ストレート", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9507}, {"act": "55%", "buckets": ["3カード"], "share": 0.0313}, {"act": "20%", "buckets": ["フルハウス"], "share": 0.0164}, {"act": "33%", "buckets": ["ストフラ・4カード"], "share": 0.0016}]}]}, {"name": "utg vs bb x-~33-c-bbアクション", "street": "turn", "pair": "UTG_vs_BB", "line": "XC33", "node": "turn_OOP", "bet": 15, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 2401, "pattern": "標準", "bands": "27/26/17/12", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9995}, {"act": "33%", "buckets": ["オーバーペア"], "share": 0.0005}]}]}, {"name": "utg vs bb x-~33-c-x-utgアクション", "street": "turn", "pair": "UTG_vs_BB", "line": "XC33", "node": "turn_IP", "bet": 56, "rules": [{"label": "全ボード", "cond": [], "freq": [50, 10, 20, 20, 0], "n": 2401, "pattern": "標準", "bands": "75/76/61/48", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.871}, {"act": "83%", "buckets": ["3カード", "オーバーペア"], "share": 0.0866}, {"act": "55%", "buckets": ["フラッシュ", "ストレート"], "share": 0.0424}]}]}, {"name": "utg vs btn x-x-utgアクション", "street": "turn", "pair": "UTG_vs_BTN", "line": "XX", "node": "turn_OOP", "bet": 39, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 20, 10, 0, 10], "n": 2401, "pattern": "標準", "bands": "55/49/45/31", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "utg vs btn x-x-x-btnアクション", "street": "turn", "pair": "UTG_vs_BTN", "line": "XX", "node": "turn_IP", "bet": 38, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 10, 10, 10, 10], "n": 2401, "pattern": "標準", "bands": "71/50/38/32", "play": [{"act": "check", "buckets": ["フルハウス", "フラッシュ", "ストレート", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9451}, {"act": "83%", "buckets": ["3カード", "コンボドロー"], "share": 0.0537}, {"act": "55%", "buckets": ["ストフラ・4カード"], "share": 0.0011}]}]}, {"name": "utg vs btn ~33-c-utgアクション", "street": "turn", "pair": "UTG_vs_BTN", "line": "B33C", "node": "turn_OOP", "bet": 46, "rules": [{"label": "全ボード", "cond": [], "freq": [50, 20, 10, 20, 0], "n": 2401, "pattern": "標準", "bands": "52/58/51/42", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8748}, {"act": "83%", "buckets": ["オーバーペア", "ナッツFD", "FD", "OESD"], "share": 0.0983}, {"act": "55%", "buckets": ["コンボドロー"], "share": 0.0268}]}]}, {"name": "utg vs btn ~33-c-x-btnアクション", "street": "turn", "pair": "UTG_vs_BTN", "line": "B33C", "node": "turn_IP", "bet": 43, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 10, 20, 10, 0], "n": 2401, "pattern": "標準", "bands": "67/71/43/37", "play": [{"act": "check", "buckets": ["フルハウス", "フラッシュ", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9058}, {"act": "55%", "buckets": ["ストレート", "3カード", "オーバーペア"], "share": 0.0917}, {"act": "55%", "buckets": ["ストフラ・4カード"], "share": 0.0025}]}]}, {"name": "utg vs btn x-~33-c-utgアクション", "street": "turn", "pair": "UTG_vs_BTN", "line": "XC33", "node": "turn_OOP", "bet": 5, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 2401, "pattern": "標準", "bands": "16/8/6/3", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "utg vs btn x-~33-c-x-btnアクション", "street": "turn", "pair": "UTG_vs_BTN", "line": "XC33", "node": "turn_IP", "bet": 55, "rules": [{"label": "全ボード", "cond": [], "freq": [50, 0, 30, 20, 0], "n": 2401, "pattern": "標準", "bands": "79/86/60/48", "play": [{"act": "check", "buckets": ["2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.787}, {"act": "55%", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "オーバーペア", "コンボドロー"], "share": 0.1216}, {"act": "83%", "buckets": ["3カード", "ナッツFD"], "share": 0.0914}]}]}, {"name": "utg vs sb x-x-sbアクション", "street": "turn", "pair": "UTG_vs_SB", "line": "XX", "node": "turn_OOP", "bet": 33, "rules": [{"label": "全ボード", "cond": [], "freq": [70, 10, 0, 10, 10], "n": 2401, "pattern": "標準", "bands": "48/46/34/30", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "utg vs sb x-x-x-utgアクション", "street": "turn", "pair": "UTG_vs_SB", "line": "XX", "node": "turn_IP", "bet": 45, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 20, 10, 10, 0], "n": 2401, "pattern": "標準", "bands": "72/55/44/37", "play": [{"act": "check", "buckets": ["フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9886}, {"act": "33%", "buckets": ["ストフラ・4カード", "フルハウス"], "share": 0.0114}]}]}, {"name": "utg vs sb x-~33-c-sbアクション", "street": "turn", "pair": "UTG_vs_SB", "line": "XC33", "node": "turn_OOP", "bet": 7, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 2401, "pattern": "標準", "bands": "18/13/7/6", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "utg vs sb x-~33-c-x-utgアクション", "street": "turn", "pair": "UTG_vs_SB", "line": "XC33", "node": "turn_IP", "bet": 55, "rules": [{"label": "全ボード", "cond": [], "freq": [50, 0, 20, 30, 0], "n": 2401, "pattern": "標準", "bands": "76/74/61/49", "play": [{"act": "check", "buckets": ["フルハウス", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8478}, {"act": "83%", "buckets": ["3カード", "オーバーペア"], "share": 0.093}, {"act": "55%", "buckets": ["ストフラ・4カード", "フラッシュ", "ストレート", "コンボドロー"], "share": 0.0592}]}]}, {"name": "btn vs bb x-x-bbアクション", "street": "turn", "pair": "BTN_vs_BB", "line": "XX", "node": "turn_OOP", "bet": 33, "rules": [{"label": "全ボード", "cond": [], "freq": [70, 10, 0, 10, 10], "n": 2401, "pattern": "標準", "bands": "54/42/38/27", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "btn vs bb x-x-x-btnアクション", "street": "turn", "pair": "BTN_vs_BB", "line": "XX", "node": "turn_IP", "bet": 50, "rules": [{"label": "全ボード", "cond": [], "freq": [50, 30, 10, 10, 0], "n": 2401, "pattern": "標準", "bands": "78/65/44/43", "play": [{"act": "check", "buckets": ["フラッシュ", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9529}, {"act": "33%", "buckets": ["3カード"], "share": 0.0211}, {"act": "55%", "buckets": ["ストレート"], "share": 0.017}, {"act": "20%", "buckets": ["ストフラ・4カード", "フルハウス"], "share": 0.0089}]}]}, {"name": "btn vs bb x-~33-c-bbアクション", "street": "turn", "pair": "BTN_vs_BB", "line": "XC33", "node": "turn_OOP", "bet": 11, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 2401, "pattern": "標準", "bands": "19/22/11/9", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "btn vs bb x-~33-c-x-btnアクション", "street": "turn", "pair": "BTN_vs_BB", "line": "XC33", "node": "turn_IP", "bet": 51, "rules": [{"label": "フラッシュ未完成盤面", "cond": [["flush", false, null]], "freq": [50, 0, 10, 30, 10], "n": 1930, "pattern": "標準", "bands": "84/67/58/44", "play": [{"act": "check", "buckets": ["フルハウス", "2ペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8294}, {"act": "83%", "buckets": ["ストレート", "3カード", "トップペア"], "share": 0.1595}, {"act": "125%", "buckets": ["オーバーペア"], "share": 0.0101}, {"act": "55%", "buckets": ["ストフラ・4カード"], "share": 0.0009}]}, {"label": "フラッシュ完成盤面", "cond": [["flush", true, null]], "freq": [50, 10, 30, 10, 0], "n": 471, "pattern": "標準", "bands": "75/73/53/43", "play": [{"act": "check", "buckets": ["2ペア", "トップペア", "2nd-3rdペア", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.7314}, {"act": "55%", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "オーバーペア", "最下位ペア以下", "コンボドロー", "ナッツFD"], "share": 0.2686}]}]}, {"name": "btn vs sb x-x-sbアクション", "street": "turn", "pair": "BTN_vs_SB", "line": "XX", "node": "turn_OOP", "bet": 39, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 20, 0, 10, 10], "n": 2401, "pattern": "標準", "bands": "56/51/42/34", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "btn vs sb x-x-x-btnアクション", "street": "turn", "pair": "BTN_vs_SB", "line": "XX", "node": "turn_IP", "bet": 40, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 10, 10, 10, 10], "n": 2401, "pattern": "標準", "bands": "76/52/37/35", "play": [{"act": "check", "buckets": ["フラッシュ", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9499}, {"act": "55%", "buckets": ["ストフラ・4カード", "ストレート", "3カード"], "share": 0.0429}, {"act": "33%", "buckets": ["フルハウス"], "share": 0.0072}]}]}, {"name": "btn vs sb x-~33-c-sbアクション", "street": "turn", "pair": "BTN_vs_SB", "line": "XC33", "node": "turn_OOP", "bet": 5, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 2401, "pattern": "標準", "bands": "14/9/5/3", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "btn vs sb x-~33-c-x-btnアクション", "street": "turn", "pair": "BTN_vs_SB", "line": "XC33", "node": "turn_IP", "bet": 52, "rules": [{"label": "全ボード", "cond": [], "freq": [50, 0, 20, 30, 0], "n": 2401, "pattern": "標準", "bands": "77/76/57/45", "play": [{"act": "check", "buckets": ["2ペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8626}, {"act": "83%", "buckets": ["3カード", "オーバーペア"], "share": 0.0716}, {"act": "55%", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "ナッツFD"], "share": 0.0658}]}]}, {"name": "sb vs bb x-x-sbアクション", "street": "turn", "pair": "SB_vs_BB", "line": "XX", "node": "turn_OOP", "bet": 43, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 20, 0, 10, 10], "n": 2401, "pattern": "標準", "bands": "56/54/46/38", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "sb vs bb x-x-x-bbアクション", "street": "turn", "pair": "SB_vs_BB", "line": "XX", "node": "turn_IP", "bet": 38, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 10, 10, 20, 0], "n": 2401, "pattern": "標準", "bands": "76/52/35/34", "play": [{"act": "check", "buckets": ["フルハウス", "フラッシュ", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9588}, {"act": "50%", "buckets": ["ストフラ・4カード", "ストレート", "3カード"], "share": 0.0412}]}]}, {"name": "sb vs bb ~33-c-sbアクション", "street": "turn", "pair": "SB_vs_BB", "line": "B33C", "node": "turn_OOP", "bet": 47, "rules": [{"label": "全ボード", "cond": [], "freq": [50, 20, 10, 20, 0], "n": 2401, "pattern": "標準", "bands": "53/58/51/41", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8937}, {"act": "150%", "buckets": ["トップペア"], "share": 0.066}, {"act": "75%", "buckets": ["OESD"], "share": 0.0403}]}]}, {"name": "sb vs bb ~33-c-x-bbアクション", "street": "turn", "pair": "SB_vs_BB", "line": "B33C", "node": "turn_IP", "bet": 43, "rules": [{"label": "全ボード", "cond": [], "freq": [60, 0, 20, 20, 0], "n": 2401, "pattern": "標準", "bands": "70/65/42/37", "play": [{"act": "check", "buckets": ["フルハウス", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.9166}, {"act": "75%", "buckets": ["フラッシュ", "ストレート", "3カード"], "share": 0.0823}, {"act": "25%", "buckets": ["ストフラ・4カード"], "share": 0.0012}]}]}, {"name": "sb vs bb x-~33-c-sbアクション", "street": "turn", "pair": "SB_vs_BB", "line": "XC33", "node": "turn_OOP", "bet": 5, "rules": [{"label": "全ボード", "cond": [], "freq": [100, 0, 0, 0, 0], "n": 2401, "pattern": "標準", "bands": "10/10/5/4", "play": [{"act": "check", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "2ペア", "オーバーペア", "トップペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 1.0}]}]}, {"name": "sb vs bb x-~33-c-x-bbアクション", "street": "turn", "pair": "SB_vs_BB", "line": "XC33", "node": "turn_IP", "bet": 53, "rules": [{"label": "フラッシュ未完成盤面", "cond": [["flush", false, null]], "freq": [50, 0, 20, 30, 0], "n": 1930, "pattern": "標準", "bands": "85/73/54/45", "play": [{"act": "check", "buckets": ["2ペア", "2nd-3rdペア", "最下位ペア以下", "コンボドロー", "ナッツFD", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.8315}, {"act": "75%", "buckets": ["3カード", "オーバーペア", "トップペア"], "share": 0.1312}, {"act": "75%", "buckets": ["ストフラ・4カード", "フルハウス", "ストレート"], "share": 0.0372}]}, {"label": "フラッシュ完成盤面", "cond": [["flush", true, null]], "freq": [50, 0, 40, 10, 0], "n": 471, "pattern": "標準", "bands": "77/78/61/46", "play": [{"act": "check", "buckets": ["2ペア", "2nd-3rdペア", "最下位ペア以下", "FD", "OESD", "ガットショット", "2BDFD", "ノーペア"], "share": 0.6521}, {"act": "75%", "buckets": ["ストフラ・4カード", "フルハウス", "フラッシュ", "ストレート", "3カード", "オーバーペア", "トップペア", "コンボドロー", "ナッツFD"], "share": 0.3479}]}]}]}</script>
+<script>
+(function(){
+"use strict";
+const DATA = JSON.parse(document.getElementById('data').textContent);
+const SPOTS = DATA.spots;
+
+/* ---------------- board maths ----------------
+   The same predicates the tables were cut on, so stage 3 can be asked
+   of any board rather than only the ones that were solved. */
+const RANKS = '23456789TJQKA';
+const SUITS = ['s','h','d','c'];
+const SUIT_GLYPH = {s:'♠', h:'♥', d:'♦', c:'♣'};
+const RV = r => RANKS.indexOf(r);
+const T = RV('T'), A = RV('A');
+
+const WINDOWS = [];
+for (let lo = 0; lo <= 8; lo++) WINDOWS.push(new Set([lo, lo+1, lo+2, lo+3, lo+4]));
+WINDOWS.push(new Set([A, RV('2'), RV('3'), RV('4'), RV('5')]));   // the wheel
+const inWindow = rs => WINDOWS.some(w => rs.every(r => w.has(r)));
+const sd = (x, y) => WINDOWS.some(w => w.has(x) && w.has(y));
+const counts = xs => { const m = {}; xs.forEach(x => m[x] = (m[x]||0)+1); return m; };
+const most = m => Math.max(...Object.values(m));
+
+function flopFeat(cards){
+  const r = cards.map(c => RV(c[0])).sort((a,b) => b-a);
+  const s = cards.map(c => c[1]);
+  const sc = counts(s), rc = counts(r);
+  const paired = most(rc) >= 2;
+  const wheelCards = r.filter(x => x === A || x <= RV('5')).length;
+  const wheel = wheelCards >= 2 && r.every(x => x === A || x <= RV('9'));
+  return {
+    hi:r[0], mid:r[1], lo:r[2],
+    pair:paired, pairhi: paired && r[0] === r[1],
+    mono: most(sc) === 3, rain: most(sc) === 1,
+    hmsd: sd(r[0], r[1]), mlsd: sd(r[1], r[2]),
+    hmml: sd(r[0], r[1]) && sd(r[1], r[2]),
+    str: !paired && inWindow(r),
+    wheel, wmade: wheel && r[0] === A && inWindow(r),
+    run3: r[0] === r[1]+1 && r[1] === r[2]+1,
+    nT: r.filter(x => x >= T).length,
+    ghm: r[0]-r[1], gml: r[1]-r[2]
+  };
+}
+
+function turnFeat(flop, card){
+  const fr = flop.map(c => RV(c[0])).sort((a,b) => b-a);
+  const fs = flop.map(c => c[1]);
+  const tr = RV(card[0]), ts = card[1];
+  const all = fr.concat([tr]), allS = fs.concat([ts]);
+  const sc = counts(allS), fsc = counts(fs);
+  const fpair = new Set(fr).size < 3;
+  const fmono = most(fsc) === 3, frain = most(fsc) === 1;
+  const uniq = [...new Set(all)].sort((a,b) => a-b);
+  let run3 = false;
+  for (let i = 0; i + 2 < uniq.length; i++)
+    if (uniq[i]+1 === uniq[i+1] && uniq[i]+2 === uniq[i+2]) run3 = true;
+  return {
+    fpair, fmono, frain,
+    fstr: !fpair && inWindow(fr),
+    pnow: new Set(all).size < 4,
+    tpair: !fpair && fr.indexOf(tr) >= 0,
+    flush: most(sc) >= 3,
+    tflush: !fmono && most(fsc) === 2 && sc[ts] === 3,
+    four: fmono && sc[ts] === 4,
+    fdrain: frain && sc[ts] === 2,
+    over: tr > fr[0], phi: tr === fr[0], plo: tr === fr[2],
+    run3,
+    f4str: uniq.length === 4 && inWindow(uniq),
+    nT: all.filter(x => x >= T).length,
+    fhi:fr[0], fmid:fr[1], flo:fr[2], turn:tr,
+    ghm: fr[0]-fr[1], gml: fr[1]-fr[2]
+  };
+}
+
+/* A condition is [family, wanted, value]: value null asks the boolean
+   family, a number asks whether the quantity reaches it. */
+const holds = (f, c) => {
+  const [fam, want, val] = c;
+  const got = val === null ? !!f[fam] : f[fam] >= val;
+  return got === want;
+};
+const matches = (f, rule) => rule.cond.every(c => holds(f, c));
+
+function deal(n){
+  const deck = [];
+  for (const r of RANKS) for (const s of SUITS) deck.push(r + s);
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(deck.splice(Math.floor(Math.random()*deck.length), 1)[0]);
+  return out;
+}
+/* A board this spot's rules actually sort; near-instant, but bounded. */
+function dealFor(spot){
+  for (let i = 0; i < 400; i++){
+    const cards = deal(spot.street === 'flop' ? 3 : 4);
+    const flop = cards.slice(0,3);
+    const f = spot.street === 'flop' ? flopFeat(flop) : turnFeat(flop, cards[3]);
+    const hit = spot.rules.find(r => matches(f, r));
+    if (hit) return {cards, rule:hit};
+  }
+  return null;
+}
+
+/* ---------------- progress ----------------
+   Kept in the artifact's own store so it follows the account rather than
+   the browser; localStorage carries it when the store is not reachable. */
+const BOXES = [0, 6e4, 864e5, 2592e5, 6048e5, 18144e5];   // now, 1m, 1d, 3d, 7d, 21d
+let prog = {};
+let store = null;
+const LS = 'srp40.progress.v1';
+
+function loadLocal(){
+  try { prog = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { prog = {}; }
+}
+function saveLocal(){
+  try { localStorage.setItem(LS, JSON.stringify(prog)); } catch (e) {}
+}
+let saveTimer = null;
+function save(){
+  saveLocal();
+  if (!store) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    store.set({cards: prog, at: Date.now()}).catch(() => {});
+  }, 800);
+}
+(async function connect(){
+  const db = window.claude && window.claude.use ? await window.claude.use('db') : null;
+  if (!db) return;
+  store = db.doc('progress/main');
+  try {
+    const snap = await store.get();
+    const remote = snap.exists ? (snap.data().cards || {}) : null;
+    if (remote){
+      for (const k in remote)
+        if (!prog[k] || (remote[k].due || 0) > (prog[k].due || 0)) prog[k] = remote[k];
+      saveLocal(); render();
+    }
+  } catch (e) {}
+})();
+
+const idOf = (spot, rule, stage) => spot.name + '|' + rule.label + '|' + stage;
+const cardsFor = stage => {
+  const out = [];
+  for (const s of SPOTS){
+    if (!passes(s)) continue;
+    for (const r of s.rules){
+      if (stage === 2 && !r.play.length) continue;
+      if (stage === 3 && s.rules.length < 2) continue;   // nothing to tell apart
+      out.push({spot:s, rule:r, stage, id: idOf(s, r, stage)});
+    }
+  }
+  return out;
+};
+
+/* ---------------- session ---------------- */
+let stage = 1, shown = false, queue = [], current = null, generated = null;
+const filters = {street:'all', pair:'all'};
+const PAIRS = [...new Set(SPOTS.map(s => s.pair))];
+const passes = s =>
+  (filters.street === 'all' || filters.street === s.street) &&
+  (filters.pair === 'all' || filters.pair === s.pair);
+
+function due(c){ const p = prog[c.id]; return !p ? -1 : (p.due || 0); }
+function build(){
+  const now = Date.now();
+  const all = cardsFor(stage);
+  const fresh = all.filter(c => !prog[c.id]);
+  const ready = all.filter(c => prog[c.id] && (prog[c.id].due || 0) <= now)
+                   .sort((a,b) => due(a) - due(b));
+  queue = ready.concat(shuffle(fresh));
+  if (!queue.length) queue = shuffle(all.slice());
+  return all.length;
+}
+function shuffle(a){
+  for (let i = a.length-1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+function next(){
+  if (!queue.length) build();
+  current = queue.shift() || null;
+  shown = false;
+  generated = current && current.stage === 3 ? dealFor(current.spot) : null;
+  if (current && current.stage === 3 && generated) current = {...current, rule: generated.rule,
+    id: idOf(current.spot, generated.rule, 3)};
+  render();
+}
+function grade(ok){
+  if (!current) return;
+  const p = prog[current.id] || {box:0};
+  p.box = ok ? Math.min(BOXES.length-1, (p.box||0)+1) : 0;
+  p.due = Date.now() + BOXES[p.box];
+  p.seen = (p.seen||0)+1;
+  prog[current.id] = p;
+  save(); next();
+}
+
+/* ---------------- rendering ---------------- */
+const SLOTS = ['check','~33%','50%','75%','125%~'];
+const SLOT_VAR = ['--b0','--b1','--b2','--b3','--b4'];
+const esc = t => String(t).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+
+function freqHTML(v){
+  const bar = v.map((x,i) => x > 0
+    ? `<span style="width:${x}%;background:var(${SLOT_VAR[i]})"></span>` : '').join('');
+  const nums = v.map((x,i) =>
+    `<div><div class="v"${x===0?' style="color:var(--faint)"':''}>${x}</div>
+     <div class="k"><i class="swatch" style="background:var(${SLOT_VAR[i]})"></i>${esc(SLOTS[i])}</div></div>`).join('');
+  return `<div class="freqbar">${bar}</div><div class="freqnums">${nums}</div>`;
+}
+function playHTML(rule){
+  if (!rule.play.length) return '<p style="color:var(--faint);font-size:13px;margin:0">—</p>';
+  return '<div class="play">' + rule.play.map(g =>
+    `<div class="line"><div class="act">${esc(g.act)}</div>
+     <div class="bk">${esc(g.buckets.join('、'))}<em>${Math.round(g.share*100)}%</em></div></div>`).join('') + '</div>';
+}
+function boardHTML(cards, street){
+  return '<div class="board">' + cards.map((c,i) => {
+    const red = c[1] === 'h' || c[1] === 'd';
+    const isTurn = street === 'turn' && i === 3;
+    return `<div class="pc${red?' red':''}${isTurn?' turn':''}">${esc(c[0])}${SUIT_GLYPH[c[1]]}
+      ${isTurn ? '<small>TURN</small>' : '<small>&nbsp;</small>'}</div>`;
+  }).join('') + '</div>';
+}
+
+function render(){
+  const main = document.getElementById('main');
+  const foot = document.getElementById('foot');
+  document.querySelectorAll('#stages button').forEach(b =>
+    b.setAttribute('aria-selected', String(+b.dataset.s === stage)));
+  document.getElementById('meter').hidden = stage === 0;
+
+  if (stage === 0){ main.innerHTML = refHTML(); foot.innerHTML = FOOT; return; }
+  if (!current){ next(); return; }
+
+  const total = cardsFor(stage).length;
+  const learned = cardsFor(stage).filter(c => (prog[c.id]||{}).box >= 2).length;
+  document.getElementById('mlabel').textContent = 'box 2以上';
+  document.getElementById('mfill').style.width = (total ? learned/total*100 : 0) + '%';
+  document.getElementById('mcount').textContent = learned + ' / ' + total;
+  const allSeen = Object.keys(prog).length;
+  document.getElementById('tally').textContent = allSeen ? allSeen + ' 枚を学習中' : '91ルール / 40スポット';
+
+  if (!total){
+    main.innerHTML = `<div class="q"><div class="done"><b>該当するカードがありません</b>
+      絞り込みを緩めてください。</div></div>`;
+    foot.innerHTML = FOOT; return;
+  }
+  const {spot, rule} = current;
+  let q = `<div class="q">
+    <div class="eyebrow">${stage === 3 ? 'どの条件に該当するか' : (stage === 1 ? 'レンジ全体の頻度は' : 'ハンド別の打ち方は')}</div>
+    <div class="spot">${esc(spot.name)}</div>
+    <div class="betrate">ベット率 ${spot.bet}%${spot.street === 'turn' ? ' · ターン' : ' · フロップ'}</div>`;
+  if (stage === 3 && generated){
+    q += boardHTML(generated.cards, spot.street);
+    q += `<div class="ask">このボードは、${spot.rules.length}本のルールのどれに入るか。</div>`;
+  } else {
+    q += `<div class="cond">${esc(rule.label)}</div>`;
+    q += `<div class="ask">${stage === 1
+      ? '（check, ~33%, 50%, 75%, 125%~）とベットの形'
+      : '各ハンド区分がとるアクションとサイズ'}</div>`;
+  }
+  q += '</div>';
+
+  if (!shown){
+    q += `<button class="reveal" id="rev">答えを見る<kbd>space</kbd></button>`;
+    main.innerHTML = q;
+    document.getElementById('rev').onclick = () => { shown = true; render(); };
+  } else {
+    let a = '<div class="a">';
+    if (stage === 3){
+      a += `<section><h3>該当する条件</h3><div class="cond" style="margin:0;padding:0;border:0">${esc(rule.label)}</div>
+        <div class="tagrow"><span class="bands">${rule.n.toLocaleString()} / ${spot.street === 'flop' ? '22,100' : '2,401'} 通り</span></div></section>`;
+      a += `<section><h3>レンジ頻度</h3>${freqHTML(rule.freq)}</section>`;
+    } else if (stage === 1){
+      a += `<section><h3>レンジ頻度</h3>${freqHTML(rule.freq)}
+        <div class="tagrow">${rule.pattern ? `<span class="tag">${esc(rule.pattern)}</span>` : ''}
+        ${rule.bands ? `<span class="bands">ナッツ/強/中/弱 ${esc(rule.bands)}</span>` : ''}</div></section>`;
+    } else {
+      a += `<section><h3>打つなら</h3>${playHTML(rule)}</section>`;
+      a += `<section><h3>レンジ頻度（参考）</h3>${freqHTML(rule.freq)}</section>`;
+    }
+    a += '</div>';
+    a += `<div class="grade">
+      <button class="no" id="no">もう一度<kbd>1</kbd></button>
+      <button class="yes" id="yes">できた<kbd>2</kbd></button></div>`;
+    main.innerHTML = q + a;
+    document.getElementById('no').onclick = () => grade(false);
+    document.getElementById('yes').onclick = () => grade(true);
+  }
+  foot.innerHTML = FOOT;
+}
+
+function refHTML(){
+  return '<div class="ref">' + SPOTS.filter(passes).map(s => `
+    <details><summary>${esc(s.name)}<span>ベット率 ${s.bet}% · ${s.rules.length}ルール</span></summary>
+      <div class="body">${s.rules.map(r => `<div class="r">
+        <div class="rl">${esc(r.label)} <span class="n">[${r.n.toLocaleString()}${s.street === 'flop' ? '' : '/2401'}]</span>
+        ${r.pattern ? `<span class="n">· ${esc(r.pattern)} ${esc(r.bands)}</span>` : ''}</div>
+        ${freqHTML(r.freq)}
+        <div style="margin-top:12px">${playHTML(r)}</div>
+      </div>`).join('')}</div></details>`).join('') + '</div>';
+}
+
+const FOOT = '数字は（check, ~33%, 50%, 75%, 125%~）の5枠。'
+  + 'ハンド区分は強い順に ' + DATA.buckets.slice(0,10).join('、')
+  + '、ノーペアは ' + DATA.buckets.slice(10).join('、') + '。'
+  + '<br>進捗はこのアーティファクトに保存され、端末をまたいで引き継がれます。';
+
+/* ---------------- chrome ---------------- */
+function drawFilters(){
+  const el = document.getElementById('filters');
+  const mk = (label, group, val) =>
+    `<button class="chip" data-g="${group}" data-v="${val}" aria-pressed="${filters[group]===val}">${esc(label)}</button>`;
+  el.innerHTML = mk('全て','street','all') + mk('フロップ','street','flop') + mk('ターン','street','turn')
+    + mk('全ペア','pair','all')
+    + PAIRS.map(p => mk(p.replace(/_vs_/,' vs ').toLowerCase(),'pair',p)).join('');
+  el.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+    filters[b.dataset.g] = b.dataset.v;
+    drawFilters(); current = null; queue = []; render();
+  });
+}
+document.getElementById('stages').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  stage = +b.dataset.s; current = null; queue = []; render();
+};
+document.addEventListener('keydown', e => {
+  if (stage === 0 || e.metaKey || e.ctrlKey) return;
+  if (e.key === ' ' && !shown){ e.preventDefault(); shown = true; render(); }
+  else if (shown && (e.key === '1')) grade(false);
+  else if (shown && (e.key === '2')) grade(true);
+});
+
+loadLocal();
+drawFilters();
+render();
+})();
+</script>

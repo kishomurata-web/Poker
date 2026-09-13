@@ -431,6 +431,42 @@ def main(a):
         open(a.play_out, "w").write("\n".join(P) + "\n")
         print(f"{a.play_out}: {len(P)} lines")
 
+        if a.json_out:
+            # The drill app evaluates the conditions itself rather than being
+            # handed a board-to-rule table: 88,288 decisions would not travel,
+            # and a rule carried as its own conditions can be asked of a board
+            # nobody solved.
+            J = {'buckets': pattern.BUCKETS, 'spots': []}
+            for street, order, keyed, tq_, labeller, hands, acts, names, wf in (
+                    ('flop', FORDER, FLOPKEY, fq, tree.label, HF, FA, NF, lambda w, c: w * c),
+                    ('turn', TORDER, TURNKEY, tq, turntree.label, HT, TA_, NT, lambda w, c: c)):
+                for name in order:
+                    key, lv = keyed[name]
+                    rules, m, _, sh = tq_[name]
+                    by_label = {lab: (v, n) for _, lab, v, n in rules}
+                    plays = {lab: gs for _, lab, _, gs in
+                             play_table(lv, key, hands, labeller, wf, acts, names)}
+                    out = []
+                    for rs, path in lv:
+                        lab = labeller(path)
+                        if lab not in by_label: continue
+                        v, n = by_label[lab]
+                        pat, bd, _ = sh.get(lab, ('', '', []))
+                        gs = plays.get(lab, [])
+                        tot = sum(g[2] for g in gs) or 1.0
+                        out.append({
+                            'label': lab, 'cond': [[f, bool(p), x] for f, p, x in path],
+                            'freq': v, 'n': n, 'pattern': pat, 'bands': bd,
+                            'play': [{'act': g[0], 'buckets': g[1],
+                                      'share': round(g[2] / tot, 4)} for g in gs]})
+                    out.sort(key=lambda r: -r['n'])
+                    J['spots'].append({'name': name, 'street': street,
+                                       'pair': key[0], 'line': key[1], 'node': key[2],
+                                       'bet': round((1 - m['X']) * 100), 'rules': out})
+            json.dump(J, open(a.json_out, 'w'), ensure_ascii=False)
+            print(f"{a.json_out}: {len(J['spots'])} spots, "
+                  f"{sum(len(s2['rules']) for s2 in J['spots'])} rules")
+
         if a.merged_out:
             play = {}
             for name in FORDER:
@@ -498,6 +534,8 @@ if __name__ == '__main__':
                         'to check at the table')
     p.add_argument('--alloc', help="allocate.py's per-spot rule counts, for a "
                                    "table sized to be memorised")
+    p.add_argument('--json-out', default='40BB_SRP.json',
+                   help='the same table as structured data, for the drill app')
     p.add_argument('--merged-out', default='40BB_SRP_all.txt',
                    help='both documents woven into one')
     p.add_argument('--play-out', default='40BB_SRP_play.txt',
