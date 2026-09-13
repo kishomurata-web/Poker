@@ -497,7 +497,7 @@ def main(a):
             # handed a board-to-rule table: 88,288 decisions would not travel,
             # and a rule carried as its own conditions can be asked of a board
             # nobody solved.
-            J = {'buckets': pattern.BUCKETS, 'spots': []}
+            J = {'depth': a.label, 'buckets': pattern.BUCKETS, 'spots': []}
             for street, order, keyed, tq_, labeller, hands, acts, names, wf in (
                     ('flop', FORDER, FLOPKEY, fq, tree.label, HF, FA, NF, lambda w, c: w * c),
                     ('turn', TORDER, TURNKEY, tq, turntree.label, HT, TA_, NT, lambda w, c: c)):
