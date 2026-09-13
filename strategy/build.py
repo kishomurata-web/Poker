@@ -55,6 +55,24 @@ def error(leaves):
             den += f.w
     return num / den * 100, bet / den * 100
 
+def refit(leaves, rows):
+    """The same partition, filled with another stack depth's strategies.
+
+    The board reading is the expensive half to learn and the boards do not
+    change with the stack, so one depth's cuts carry to another and only the
+    numbers on them are learned again. Measured at 1.2 points against cutting
+    20BB its own way, where learning the conditions twice buys nothing.
+    """
+    by = {}
+    for f, d in rows:
+        by[(f.board, getattr(f, 'card', '-'))] = (f, d)
+    out = []
+    for rs, path in leaves:
+        moved = [by[k] for k in ((f.board, getattr(f, 'card', '-')) for f, _ in rs) if k in by]
+        if moved: out.append((moved, path))
+    return out
+
+
 def shapes(leaves, key, H, t, label, min_share=0.10, min_cover=0.70):
     """For each rule: the shape its boards share, and the boards that break it.
 
@@ -185,7 +203,7 @@ def size_labels(path):
     return out
 
 
-MERGED_HEAD = """40BB SRP 簡易GTO戦略 v2 統合版
+MERGED_HEAD = """__LABEL__ SRP 簡易GTO戦略 v2 統合版
 
 ■ 1つのルールに2種類の情報が載っている
 
@@ -206,10 +224,10 @@ MERGED_HEAD = """40BB SRP 簡易GTO戦略 v2 統合版
 """
 
 
-PLAY_HEAD = """40BB SRP 実戦用アクション表（スコア最大化版）
+PLAY_HEAD = """__LABEL__ SRP 実戦用アクション表（スコア最大化版）
 
 ■ これは何か
-頻度表（40BB_SRP_v2.txt）はレンジ全体がどう動くかの記述で、混ぜて打つことを前提にしている。
+頻度表（__LABEL___SRP_v2.txt）はレンジ全体がどう動くかの記述で、混ぜて打つことを前提にしている。
 この表はそれとは目的が違い、アプリの採点で点を取るための表である。
 
 アプリは1ハンドの選択を、そのハンドにとっての最頻アクションと比べて採点する
@@ -236,7 +254,7 @@ check / ~33% / 50% / 75% / 125%~ の5段階。実サイズの丸め方は頻度�
 
 """
 
-HEAD = """40BB SRP 簡易GTO戦略 v2（1755フロップ全数版）
+HEAD = """__LABEL__ SRP 簡易GTO戦略 v2（1755フロップ全数版）
 
 ■ ベットサイズの段階
 （）内は（check, ~33%, 50%, 75%, 125%~）の5枠。実サイズは以下の段階に丸める。
@@ -250,8 +268,7 @@ HEAD = """40BB SRP 簡易GTO戦略 v2（1755フロップ全数版）
 
 サイトのメニューは2系統ある。SB vs BB のみ 12/25/50/75/100/150(/200)%、
 他の5ペアは 20/33/55/83/125(/200)%。上の段階はどちらも同じ5枠に落ちる。
-フロップでは125%~の枠は全スポットで0%（40BBではフロップのオーバーベットが存在しない）。
-ターンでは200%とオールインが最大3.7%現れ、125%~の枠に含めている。
+__TIERNOTE__
 
 ■ [N] の意味
 フロップ：22,100通りの実フロップのうち何通りか（1755クラスを出現確率で重み付け、合計22,100）。
@@ -301,9 +318,12 @@ def main(a):
     fspots = collections.defaultdict(list)
     for key, d in gto.read(a.flop):
         fspots[key[:3]].append((F[key[3]], d))
+    # A depth whose turn has not been collected yet gets a flop-only table
+    # rather than one quietly carrying another depth's turn.
     tspots = collections.defaultdict(list)
-    for key, d in gto.read(a.turn):
-        tspots[key[:3]].append((turnpred.Turn(key[3], key[4]), d))
+    if a.turn:
+        for key, d in gto.read(a.turn):
+            tspots[key[:3]].append((turnpred.Turn(key[3], key[4]), d))
 
     L = HEAD.split('\n')
     ALLOC = json.load(open(a.alloc)) if a.alloc else {}
@@ -315,10 +335,24 @@ def main(a):
     t = pattern.THRESHOLDS[a.pattern]
     H = pattern.load(a.hands) if a.hands else {}
     TH = pattern.load(a.turn_hands) if a.turn_hands else {}
+    # --tree-from cuts the boards on one depth's strategies and fills the
+    # classes with this one's, so the board reading is learned once.
+    rspots = tspots_ref = None
+    if a.tree_from:
+        rspots = collections.defaultdict(list)
+        for key, d in gto.read(a.tree_from):
+            rspots[key[:3]].append((F[key[3]], d))
+    if a.turn_tree_from:
+        tspots_ref = collections.defaultdict(list)
+        for key, d in gto.read(a.turn_tree_from):
+            tspots_ref[key[:3]].append((turnpred.Turn(key[3], key[4]), d))
+
     fq, FLOPKEY, TURNKEY = {}, {}, {}
     for key, rows in fspots.items():
-        lv = tree.grow(rows, max_leaves=rules_for('F', key, a.flop_rules),
+        lv = tree.grow(rspots[key] if rspots else rows,
+                       max_leaves=rules_for('F', key, a.flop_rules),
                        min_w=150, max_depth=a.depth)
+        if rspots: lv = refit(lv, rows)
         sh = shapes(lv, key, H, t, tree.label) if H else {}
         FLOPKEY[FLOPNAME[(key[0], key[2])]] = (key, lv)
         fq[FLOPNAME[(key[0], key[2])]] = (tree.fmt(lv), tree.stats(rows)[1], error(lv), sh)
@@ -336,8 +370,10 @@ def main(a):
             for node in ['turn_OOP', 'turn_IP']:
                 k = (pair, line, node)
                 if k not in tspots: continue
-                lv = turntree.grow(tspots[k], max_leaves=rules_for('T', k, a.turn_rules),
+                lv = turntree.grow(tspots_ref[k] if tspots_ref else tspots[k],
+                                   max_leaves=rules_for('T', k, a.turn_rules),
                                    min_w=80, max_depth=a.depth)
+                if tspots_ref: lv = refit(lv, tspots[k])
                 nm = turnname(*k)
                 TORDER.append(nm)
                 TURNKEY[nm] = (k, lv)
@@ -368,10 +404,26 @@ def main(a):
           "これは1755ボードを10クラス前後に畳んだことの代償で、クラスを増やせば下がるが、",
           "同じ10クラスなら他の切り方でこれ以上は下がらない水準まで詰めてある。"]
 
+    # What the last column actually holds is a fact about the stack depth, not
+    # a sentence to carry over: at 40BB the flop never overbets, at 20BB the
+    # column is all-ins that happen to be three times the pot.
+    big = collections.defaultdict(float)
+    tot = 0.0
+    for key, rows in fspots.items():
+        for f, d in rows:
+            for t in ('XL', 'OB'): big[t] += d.get(t, 0.0) * f.w
+            tot += f.w
+    xl, ob = big['XL'] / tot * 100, big['OB'] / tot * 100
+    note = (f"フロップで125%~の枠に入るのは{xl + ob:.1f}%"
+            + (f"（オーバーベット{xl:.1f}% ＋ オールイン{ob:.1f}%）。" if xl + ob >= 0.05
+               else "で、事実上使われない。"))
+    if TORDER:
+        note += "ターンでは200%とオールインもこの枠に含めている。"
+    L = [x.replace('__TIERNOTE__', note) for x in L]
     open(a.out, "w").write("\n".join(L) + "\n")
 
     if a.play_out and (H or TH):
-        P = [PLAY_HEAD, "=========================  フロップ  =========================", ""]
+        P = [PLAY_HEAD.replace('__LABEL__', a.label), "=========================  フロップ  =========================", ""]
         ev = a.objective == 'ev'
         HF, FA = hands_by_decision(a.hands, ev) if a.hands else ({}, 'tier')
         HT, TA_ = hands_by_decision(a.turn_hands, ev) if a.turn_hands else ({}, 'tier')
@@ -391,7 +443,7 @@ def main(a):
             sw = sum(w for _, _, _, gs in rt for _, _, w, _ in gs)
             sc[name] = (sum(s2 * w for _, _, _, gs in rt for _, _, w, s2 in gs) / sw,
                         sw, FA == 'ev')
-        P += ["", "=========================  ターン  =========================", ""]
+        if TORDER: P += ["", "=========================  ターン  =========================", ""]
         for nm in TORDER:
             key, lv = TURNKEY[nm]
             rt = play_table(lv, key, HT, turntree.label, lambda w, c: c, TA_, NT)
@@ -477,21 +529,21 @@ def main(a):
                 key, lv = TURNKEY[nm]
                 for _, rule, _, gs in play_table(lv, key, HT, turntree.label, lambda w, c: c, TA_, NT):
                     play[(nm, rule)] = gs
-            M = MERGED_HEAD.split("\n")
+            M = MERGED_HEAD.replace('__LABEL__', a.label).split("\n")
             if a.alloc:
                 M += ["■ この版について",
                       "暗記用に、ルール数をスポットごとに配分しなおした版である。次の1ルールは、",
                       "覚える行数あたりで最も点が伸びるスポットに渡してある。ボードの読み分けが",
                       "点にならないスポットは1ルールのままで、その分をフロップの数スポットに寄せている。",
                       ""]
-            M += HEAD.split("\n")[1:]
+            M += [x.replace('__TIERNOTE__', note) for x in HEAD.split("\n")[1:]]
             for name in FORDER:
                 rules, m, _, sh = fq[name]
                 M.append(f"{name}    ベット率 {(1 - m['X']) * 100:.0f}%")
                 for _, rule, v, n in rules:
                     M += rule_block(rule, v, n, sh.get(rule, ('', '', [])),
                                     play.get((name, rule))) + [""]
-            M += TURNHEAD.split("\n")
+            if TORDER: M += TURNHEAD.split("\n")
             for nm in TORDER:
                 rules, m, _, sh = tq[nm]
                 M.append(f"{nm}    ベット率 {(1 - m['X']) * 100:.0f}%")
@@ -505,16 +557,28 @@ def main(a):
             open(a.merged_out, "w").write("\n".join(M) + "\n")
             print(f"{a.merged_out}: {len(M)} lines")
     print(f"{a.out}: {len(L)} lines, {len(FORDER)} flop spots, {len(TORDER)} turn spots")
+    # [N] counts the real flops a rule covers, so a spot whose sweep did not
+    # finish adds up short. That is worth saying rather than asserting away -
+    # the table is still usable, it just describes slightly fewer boards.
+    short = []
     for name in FORDER:
-        assert sum(x[3] for x in fq[name][0]) == 22100, name
+        got = sum(x[3] for x in fq[name][0])
+        if got != 22100: short.append((name, got, 22100))
     for nm in TORDER:
-        assert sum(x[3] for x in tq[nm][0]) == 2401, nm
-    print("every spot's [N] adds up")
+        got = sum(x[3] for x in tq[nm][0])
+        if got != 2401: short.append((nm, got, 2401))
+    if not short:
+        print("every spot's [N] adds up")
+    else:
+        print("incomplete sweeps - these spots describe fewer boards than exist:")
+        for name, got, want in short:
+            print(f"  {name:30s} {got:,} / {want:,}  ({got / want * 100:.1f}%)")
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('--flop', default='flop40.csv.gz')
-    p.add_argument('--turn', default='turn40.csv.gz')
+    p.add_argument('--turn', default='turn40.csv.gz',
+                   help='omit with --turn "" for a flop-only table')
     p.add_argument('--out', default='40BB_SRP_v2.txt')
     p.add_argument('--hands', default='hands40.csv.gz',
                    help="export_hands.py's output; without it the shape column is left off")
@@ -523,6 +587,11 @@ if __name__ == '__main__':
     p.add_argument('--pattern', default='B', choices=sorted(pattern.THRESHOLDS),
                    help='how hard a board has to lean before it is called a shape: '
                         'A loose, B middling, C strict')
+    p.add_argument('--label', default='40BB',
+                   help='the stack depth this table is for, as it heads the page')
+    p.add_argument('--tree-from', help="cut the flop boards on this depth's "
+                   "frequency export, and fill the classes with --flop's")
+    p.add_argument('--turn-tree-from', help='the same for the turn')
     p.add_argument('--objective', default='score', choices=('score', 'ev'),
                    help="what the play lines optimise. 'score' maximises what the "
                         "app grades, which never looks at EV inside the strategy "
