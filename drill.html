@@ -10,7 +10,15 @@
   --suit:#B3303C;
   --ok:#3F7D58; --ok-soft:#DDEBE1;
   --again:#A34A3E; --again-soft:#F2DFDB;
-  --b0:#B9BDC2; --b1:#D8B978; --b2:#C08E36; --b3:#9A6114; --b4:#6A3A0C;
+  /* The main app's action colours, so a size means the same thing here as it
+     does there: check is teal, and a bigger bet is hotter and darker. The
+     four bet tiers take the six-stop raise ramp spread end to end, which is
+     what actionColorFor does for a four-size menu. The ramp's stops were
+     picked for CIEDE2000 separation under normal vision and both red-green
+     dichromacies, so they are copied rather than re-derived, and they do not
+     change with the theme - the same bet is the same colour on either. */
+  --act-x:#2f7d7d;
+  --act-1:#eab13c; --act-2:#cd3105; --act-3:#a82a2c; --act-4:#571a2e;
   --shadow:0 1px 2px rgba(20,24,31,.06), 0 6px 18px rgba(20,24,31,.05);
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --ui:"Archivo","Noto Sans JP",system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;
@@ -24,7 +32,6 @@
     --suit:#E4707A;
     --ok:#63B184; --ok-soft:#1E3128;
     --again:#D2796B; --again-soft:#33221E;
-    --b0:#4A535E; --b1:#8A6E33; --b2:#B5883C; --b3:#D0A253; --b4:#E8C877;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.28);
   }
 }
@@ -36,7 +43,6 @@
   --suit:#E4707A;
   --ok:#63B184; --ok-soft:#1E3128;
   --again:#D2796B; --again-soft:#33221E;
-  --b0:#4A535E; --b1:#8A6E33; --b2:#B5883C; --b3:#D0A253; --b4:#E8C877;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.28);
 }
 
@@ -468,7 +474,7 @@ function grade(ok){
 
 /* ---------------- rendering ---------------- */
 const SLOTS = ['check','~33%','50%','75%','125%~'];
-const SLOT_VAR = ['--b0','--b1','--b2','--b3','--b4'];
+const SLOT_VAR = ['--act-x','--act-1','--act-2','--act-3','--act-4'];
 const esc = t => String(t).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
 
 function freqHTML(v){
