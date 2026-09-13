@@ -32,7 +32,13 @@ FORDER = ['utg vs bb utg c-bet', 'utg vs bb bb donk bet', 'utg vs btn utg c-bet'
           'utg vs btn btn BMCB', 'utg vs sb utg c-bet', 'utg vs sb sb donk bet',
           'btn vs bb btn c-bet', 'btn vs bb bb donk bet', 'btn vs sb btn c-bet',
           'btn vs sb sb donk bet', 'sb vs bb sb c-bet', 'sb vs bb bb BMCB']
-PRE = {'XX': 'x-x-', 'XC33': 'x-~33-c-', 'B33C': '~33-c-'}
+# The cache names a line by the flop bet that made it, so a depth's turn is
+# one of these per flop size. Order here is the order the table prints in;
+# a line the export does not carry is skipped, so this can name more lines
+# than any one export holds.
+PRE = {'XX': 'x-x-',
+       'B20C': '~20-c-', 'B33C': '~33-c-', 'B50C': '~50-c-', 'B75C': '~75-c-',
+       'XC20': 'x-~20-c-', 'XC33': 'x-~33-c-', 'XC50': 'x-~50-c-', 'XC75': 'x-~75-c-'}
 
 def turnname(pair, line, node):
     ip, oop = SEAT[pair]
@@ -373,7 +379,7 @@ def main(a):
     L += TURNHEAD.split('\n')
     tq, TORDER = {}, []
     for pair in ['UTG_vs_BB', 'UTG_vs_BTN', 'UTG_vs_SB', 'BTN_vs_BB', 'BTN_vs_SB', 'SB_vs_BB']:
-        for line in ['XX', 'B33C', 'XC33']:
+        for line in PRE:
             for node in ['turn_OOP', 'turn_IP']:
                 k = (pair, line, node)
                 if k not in tspots: continue
