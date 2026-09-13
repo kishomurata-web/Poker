@@ -91,7 +91,30 @@ def peek(cache):
     print("  --nodes %s" % ",".join(sorted(nodes)))
 
 
+def find(root=".", max_depth=3):
+    """Folders under here that hold .jsonl files, so the path need not be known."""
+    root = os.path.abspath(root)
+    hits = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = dirpath[len(root):].count(os.sep)
+        if depth >= max_depth:
+            dirnames[:] = []
+        dirnames[:] = [d for d in dirnames if not d.startswith((".", "__", "node_modules"))]
+        n = sum(1 for f in filenames if f.endswith(".jsonl"))
+        if n:
+            hits.append((n, os.path.relpath(dirpath, root)))
+    return sorted(hits, reverse=True)
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        sys.exit(__doc__)
+        print(__doc__)
+        hits = find()
+        if not hits:
+            sys.exit("no folder holding .jsonl files under %s" % os.path.abspath("."))
+        print("caches found here:\n")
+        for n, path in hits:
+            print("    %-52s %7d files" % (path, n))
+        print("\nrun it again naming one, e.g.\n    python peek_cache.py %s" % hits[0][1])
+        sys.exit(0)
     peek(sys.argv[1])
