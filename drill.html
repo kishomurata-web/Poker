@@ -220,6 +220,7 @@ button:focus-visible{outline:2px solid var(--brass); outline-offset:2px}
    rules, so the list read as a wall. The rule's own line and its five-column
    mix stay out; the class rows are a tap away. */
 .pd{margin-top:10px}
+.pd+.pd{margin-top:6px}
 .pd>summary{
   cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px;
   width:fit-content; min-height:32px;   /* a thumb, not a mouse */
@@ -633,7 +634,8 @@ function refHTML(){
       <div class="body">${s.rules.map(r => `<div class="r">
         <div class="rl">${esc(r.label)} <span class="n">[${r.n.toLocaleString()}${s.street === 'flop' ? '' : '/2401'}]</span>
         ${r.pattern ? `<span class="n">· ${esc(r.pattern)} ${esc(r.bands)}</span>` : ''}</div>
-        ${freqHTML(r.freq)}
+        <details class="pd"><summary>レンジ頻度</summary>
+          <div class="pdbody">${freqHTML(r.freq)}</div></details>
         <details class="pd"><summary>打つなら　${r.play.reduce((n, g) => n + g.buckets.length, 0)}区分</summary>
           <div class="pdbody">${playHTML(r)}</div></details>
       </div>`).join('')}</div></details>`).join('') + '</div>';
