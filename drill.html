@@ -216,13 +216,28 @@ button:focus-visible{outline:2px solid var(--brass); outline-offset:2px}
 .ref .r{padding-top:13px}
 .ref .r+.r{margin-top:13px; border-top:1px solid var(--line-soft)}
 .ref .rl{font-size:13.5px; font-weight:500; margin-bottom:8px; line-height:1.55}
+/* One class per row is seventeen rows a rule, and a spot holds up to ten
+   rules, so the list read as a wall. The rule's own line and its five-column
+   mix stay out; the class rows are a tap away. */
+.pd{margin-top:10px}
+.pd>summary{
+  cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px;
+  width:fit-content; min-height:32px;   /* a thumb, not a mouse */
+  font-family:var(--mono); font-size:11.5px; color:var(--faint);
+  padding:4px 12px; border:1px solid var(--line); border-radius:20px;
+  -webkit-tap-highlight-color:transparent;
+}
+.pd>summary::-webkit-details-marker{display:none}
+.pd>summary::before{content:'▸'; font-size:9px}
+.pd[open]>summary::before{content:'▾'}
+.pd>summary:hover{color:var(--muted); border-color:var(--muted)}
+.pdbody{margin-top:10px}
 .ref .n{font-family:var(--mono); font-size:11px; color:var(--faint); font-weight:400}
 
 .foot{margin-top:26px; font-size:11.5px; color:var(--faint); line-height:1.7}
 .foot code{font-family:var(--mono); font-size:11px}
 @media (max-width:470px){
   .wrap{padding-block:16px 100px}
-  .line{grid-template-columns:58px 1fr; gap:9px}
   .freqnums .v{font-size:15px}
   .freqnums .k{font-size:9px}
   .stages button{font-size:11px; padding:9px 2px; min-height:46px}
@@ -619,7 +634,8 @@ function refHTML(){
         <div class="rl">${esc(r.label)} <span class="n">[${r.n.toLocaleString()}${s.street === 'flop' ? '' : '/2401'}]</span>
         ${r.pattern ? `<span class="n">· ${esc(r.pattern)} ${esc(r.bands)}</span>` : ''}</div>
         ${freqHTML(r.freq)}
-        <div style="margin-top:12px">${playHTML(r)}</div>
+        <details class="pd"><summary>打つなら　${r.play.reduce((n, g) => n + g.buckets.length, 0)}区分</summary>
+          <div class="pdbody">${playHTML(r)}</div></details>
       </div>`).join('')}</div></details>`).join('') + '</div>';
 }
 
