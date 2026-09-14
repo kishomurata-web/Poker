@@ -1,10 +1,22 @@
 @echo off
-REM The same for 20BB. Run it after the 40BB one has come back clean, so a
-REM wrong filter is found once rather than twice.
+REM Exports whatever of the 20BB turn is on disk, for the same seven lines the
+REM 40BB table uses.
 REM
-REM 20BB already has B33C for all six pairs, so only the 50%% and 75%%
-REM branches are new here - but the frequency export is re-run whole because
-REM one file has to carry every line the table names.
+REM A line the cache does not hold is skipped silently rather than failing, so
+REM this is safe to run before knowing whether tier 3 was ever collected at
+REM this depth. run_chain.bat left it out - "2.4 days for the last 5.6% of turn
+REM traffic" - so XC75 and B75C may well be absent, and the table will then
+REM cover the five lines that are there. check_gaps.bat says which.
+REM
+REM B50C and B75C only exist for SB_vs_BB and UTG_vs_BTN, and that is correct
+REM rather than a gap: a B line is OOP betting the flop, and those are the two
+REM pairs whose OOP player is the preflop raiser. The other four reach the same
+REM turn through XC33.
+REM
+REM The XX/XC33/B33C hands export from before is still good. Only the new lines
+REM are exported here.
+
+cd /d "%~dp0"
 
 python peek_cache.py turn_calib_20_125bb\cache > peek20.txt
 type peek20.txt
@@ -23,5 +35,5 @@ python export_hands.py --cache %CACHE% --out turnhands20_c.csv.gz ^
   --lines B50C,B75C --nodes %NODES% --stack 20
 
 echo.
-echo Done. Send peek20.txt, turn20.csv.gz, turnhands20_b.csv.gz and turnhands20_c.csv.gz.
-echo The XX/XC33/B33C hands export from before is still good - no need to redo it.
+echo Done. Send peek20.txt, turn20.csv.gz, turnhands20_b.csv.gz and
+echo turnhands20_c.csv.gz.
